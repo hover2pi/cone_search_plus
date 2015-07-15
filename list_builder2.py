@@ -89,15 +89,19 @@ def run_command(command_args, input_from=None, output_to=None):
                 stderr=subprocess.STDOUT
             )
         except subprocess.CalledProcessError:
-            input_file.close()
-            output_file.flush()
-            output_file.close()
-            os.remove(output_to)
+            if input_from is not None:
+                input_file.close()
+            if output_to is not None:
+                output_file.flush()
+                output_file.close()
+                os.remove(output_to)
             raise
         else:
-            input_file.close()
-            output_file.flush()
-            output_file.close()
+            if input_from is not None:
+                input_file.close()
+            if output_to is not None:
+                output_file.flush()
+                output_file.close()
 
 def load_base_stars(filename):
     indices = set()
@@ -112,7 +116,7 @@ def load_base_stars(filename):
     return indices, lookup
 
 def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
-    chunk_template = '.chunk_{:03}'
+    chunk_template = '.chunk_{:05}'
     if PRETEND and not exists(base_list_path):
         return [base_list_path + chunk_template.format(i+1) for i in range(10)]
     line_count = 0
@@ -248,11 +252,11 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
                 output_list.write(line)
     # remove chunk and neighbors for chunk
     _log("remove {}".format(pruned_chunk_path))
-    # os.remove(pruned_chunk_path)
+    os.remove(pruned_chunk_path)
     _log("remove {}".format(chunk_neighbors_path))
-    # os.remove(chunk_neighbors_path)
+    os.remove(chunk_neighbors_path)
     _log("remove {}".format(chunk_path))
-    # os.remove(chunk_path)
+    os.remove(chunk_path)
 
 def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
     # generate filename incorporating base list name
@@ -276,8 +280,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
 
     if not PRETEND:
         output_list = open(output_list_path, 'w')
-        header = """
-# base list: {}
+        header = """# base list: {}
 # rejecting stars with neighbors
 # ... of delta K mag <= {}
 # ... within radius <= {} degrees
@@ -383,9 +386,27 @@ if __name__ == "__main__":
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists', shell=True)
+
+    # Without writing a full dependency solver, this should be enough to ensure
+    # that target lists sharing the same base mag criteria don't clobber
+    # each other when run with multiprocessing
+    # early_commissioning, global_alignment - both 4.5-5.5
     compute_list('early_commissioning', target_lists['early_commissioning'])
-    res = _pool.apply_async(_test_log)
-    res.get()
+    # coarse_phasing, fine_phasing_routine_maintenance - both 8.5-9.5
+    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+
+
+    # Now that intermediate lists are in place for those that conflict,
+    # do the rest all at once
+    rest_of_the_target_lists = {
+        'initial_image_mosaic': target_lists['initial_image_mosaic'],
+        'global_alignment': target_lists['global_alignment'],
+        'fine_phasing_routine_maintenance': target_lists['fine_phasing_routine_maintenance'],
+        'mimf_miri': target_lists['mimf_miri'],
+    }
+
+    for name, spec in rest_of_the_target_lists.items():
+        compute_list(name, spec)
     _pool.close()
     _pool.join()
     
