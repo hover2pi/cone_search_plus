@@ -348,7 +348,7 @@ def compute_list(name, spec):
     if len(neighbor_criteria) > 0:
         for nc in neighbor_criteria:
             if k_max + nc['delta_k'] > TWOMASS_COMPLETENESS_K:
-                raise RuntimeError("For {} < K < {} and deltaK <= {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
+                _log("Warning: For {} < K < {} and deltaK <= {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
                     k_min, k_max, nc['delta_k'], k_max + nc['delta_k'], TWOMASS_COMPLETENESS_K
                 ))
             _log("for {} prune neighbors deltaK <= {} mag; r <= {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
