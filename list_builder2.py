@@ -17,6 +17,7 @@ from os.path import split, join, exists
 from list_specs import target_lists
 
 PRETEND = False
+CVZ_ONLY = True
 CHUNK_SIZE = 1000 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
 TWOMASS_COMPLETENESS_K = 15.5
 _pool = None
@@ -150,8 +151,9 @@ def compute_base_list(k_min, k_max):
     k_min_string = '{:1.1f}'.format(k_min)
     k_max_string = '{:1.1f}'.format(k_max)
     base_list_name = 'base_{}_k_{}'.format(k_min_string, k_max_string)
+    if CVZ_ONLY:
+        base_list_name += "_cvz"
     base_list_path = join('cache', base_list_name)
-
     # build args list
     args = [
         './query_2mass',
@@ -162,10 +164,20 @@ def compute_base_list(k_min, k_max):
     if exists(base_list_path):
         _log("{} exists".format(base_list_path))
         return base_list_path
-    # call subprocess
-    # write to scratch file
-    run_command(args, output_to=base_list_path)
+    if not CVZ_ONLY:
+        # call subprocess
+        # write to scratch file
+        run_command(args, output_to=base_list_path)
+    else:
+        north_args = args + ['EB_MIN={}'.format(85), 'EB_MAX={}'.format(90)]
+        north_path = base_list_path + '.north'
+        run_command(north_args, output_to=north_path)
 
+        south_args = args + ['EB_MIN={}'.format(-85), 'EB_MAX={}'.format(-90)]
+        south_path = base_list_path + '.south'
+        run_command(south_args, output_to=south_path)
+
+        run_command(['cat', north_path, south_path], output_to=base_list_path)
     # return file path
     return base_list_path
 
@@ -199,11 +211,12 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
                         raise
                 else:
                     base_indices.discard(base_idx)
-        _log("# base stars: {} entries".format(len(base_lookup.keys())))
-        _log("# neighbor stars: {} entries".format(
+        _log("pruning base list {} with neighbor list {}".format(base_list_path, neighbor_list_path))
+        _log("base stars: {} entries".format(len(base_lookup.keys())))
+        _log("neighbor stars: {} entries".format(
            idx + 1 - comment_lines
         ))
-        _log("# keeping {} entries from base list".format(len(base_indices)))
+        _log("keeping {} entries from base list".format(len(base_indices)))
         with open(output_list_path, 'w') as f:
             for base_idx in base_indices:
                 f.write(base_lookup[base_idx])
@@ -317,27 +330,6 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     for r in results:
         r.get()  # n.b. even though the helper returns None, want to see any exceptions propagate up
 
-    # for idx, chunk_path in enumerate(chunk_paths):
-    #     _log("neighbor searching {}".format(chunk_path))
-    #     # run cone search
-    #     chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin)
-    #     # filter base list chunk
-    #     pruned_chunk_path = prune_stars_with_neighbors(chunk_path, chunk_neighbors_path, chunk_neighbors_path + '.pruned', delta_k)
-    #
-    #     # append kept stars to final list
-    #     _log("Append remaining stars from {} to {}".format(pruned_chunk_path, output_list_path))
-    #     if PRETEND:
-    #         continue  # bail before we touch any files
-    #     for line in open(pruned_chunk_path):
-    #         output_list.write(line)
-    #     # remove chunk and neighbors for chunk
-    #     _log("remove {}".format(pruned_chunk_path))
-    #     os.remove(pruned_chunk_path)
-    #     _log("remove {}".format(chunk_neighbors_path))
-    #     os.remove(chunk_neighbors_path)
-    #     _log("remove {}".format(chunk_path))
-    #     os.remove(chunk_path)
-
     if not PRETEND:
         output_list.close()
     return output_list_path
@@ -369,23 +361,22 @@ def compute_list(name, spec):
     else:
         pruned_list_path = intermediate_list_path
 
-    dest_path = join('target_lists', name)
+    if CVZ_ONLY:
+        dest_path = join('target_lists_cvz_only', name)
+    else:
+        dest_path = join('target_lists', name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
     if not PRETEND:
-        shutil.copy(pruned_list_path, join('target_lists', name))
+        shutil.copy(pruned_list_path, dest_path)
 
     return dest_path
-
-def _test_log():
-    _log("test message")
-    return 'foo'
 
 if __name__ == "__main__":
     # Set up these shared/global variables
     _pool = multiprocessing.Pool(8)  # 8 processors in my Mac Pro
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
-    subprocess.call('mkdir -p ./cache ./target_lists', shell=True)
+    subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
 
     # Without writing a full dependency solver, this should be enough to ensure
     # that target lists sharing the same base mag criteria don't clobber
@@ -409,4 +400,3 @@ if __name__ == "__main__":
         compute_list(name, spec)
     _pool.close()
     _pool.join()
-    
