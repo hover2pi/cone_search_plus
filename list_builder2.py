@@ -18,6 +18,7 @@ from list_specs import target_lists
 
 PRETEND = False
 CVZ_ONLY = True
+N_PROCESSES = 32
 CHUNK_SIZE = 1000 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
 TWOMASS_COMPLETENESS_K = 15.5
 _pool = None
@@ -373,7 +374,7 @@ def compute_list(name, spec):
 
 if __name__ == "__main__":
     # Set up these shared/global variables
-    _pool = multiprocessing.Pool(8)  # 8 processors in my Mac Pro
+    _pool = multiprocessing.Pool(N_PROCESSES)  # 8 processors in my Mac Pro
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
