@@ -358,7 +358,7 @@ def compute_list(name, spec):
     if brighter_neighbors_r_arcmin is not None:
         # can't supply DK_MAX here, since we'll miss some bright neighbors unless we set DK_MAX high enough that it's useless
         _log("for {} prune brighter neighbors in r {}".format(intermediate_list_path, brighter_neighbors_r_arcmin))
-        pruned_list_path = prune_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True)
+        pruned_list_path = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True)
     else:
         pruned_list_path = intermediate_list_path
 
