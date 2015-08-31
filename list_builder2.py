@@ -348,7 +348,7 @@ def compute_list(name, spec):
         for nc in neighbor_criteria:
             if k_max + nc['delta_k'] > TWOMASS_COMPLETENESS_K:
                 raise RuntimeError("For {} < K < {} and deltaK <= {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
-                    k_min, k_max, nc['delta_k'], k_max + nc['delta_k']
+                    k_min, k_max, nc['delta_k'], k_max + nc['delta_k'], TWOMASS_COMPLETENESS_K
                 ))
             _log("for {} prune neighbors deltaK <= {} mag; r <= {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
             intermediate_list_path = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False)
