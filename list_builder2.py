@@ -16,11 +16,20 @@ from os.path import split, join, exists
 
 from list_specs import target_lists
 
+# Skip anything that touches the filesystem (for debugging)
 PRETEND = False
+# Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
 CVZ_ONLY = True
+# Number of workers (32 for telserv1)
 N_PROCESSES = 32
-CHUNK_SIZE = 1000 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
+# Number of star entries per chunk of list (chunks are inputs to cone
+# searches)
+# 1000 star chunks leads to 300 - 1500 MB neighbor lists
+CHUNK_SIZE = 1000
+# This is bogus, TODO
 TWOMASS_COMPLETENESS_K = 15.5
+
+# These globals are set in the if __name__ == "__main__" block
 _pool = None
 _manager = None
 
@@ -106,6 +115,13 @@ def run_command(command_args, input_from=None, output_to=None):
                 output_file.close()
 
 def load_base_stars(filename):
+    """A slow / memory-inefficient algorithm to build a map from
+    U00000XYZ indices back to the original lines in the star list
+
+    Returns a set `indices` and a dict `lookup` (which is maybe
+    inefficient because dict keys are a set, but I think I use the
+    set intersection operators somewhere)
+    """
     indices = set()
     lookup = {}
     with open(filename, 'r') as f:
@@ -118,6 +134,9 @@ def load_base_stars(filename):
     return indices, lookup
 
 def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
+    """Takes a path to a list, makes new files with the ".chunk_00000"
+    suffix for every `CHUNK_SIZE` lines from the input
+    """
     chunk_template = '.chunk_{:05}'
     if PRETEND and not exists(base_list_path):
         return [base_list_path + chunk_template.format(i+1) for i in range(10)]
@@ -148,6 +167,9 @@ def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
     return chunk_paths
 
 def compute_base_list(k_min, k_max):
+    """Simply query for stars in some magnitude range, optionally
+    limiting to the CVZ. The resulting file path is returned, and will
+    be of the form `cache/base_<k_min>_k_<k_max>`"""
     # generate filename
     k_min_string = '{:1.1f}'.format(k_min)
     k_max_string = '{:1.1f}'.format(k_max)
@@ -183,6 +205,10 @@ def compute_base_list(k_min, k_max):
     return base_list_path
 
 def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_path, only_reject_brighter_neighbors):
+    """Takes a base list (or chunk of a base list) and a corresponding
+    neighbor list. Produces an output list at `output_list_path` with
+    the stars from `base_list_path` that have *no* neighbors
+    in the neighbor list"""
     if exists(output_list_path):
         _log("{} exists".format(output_list_path))
         return output_list_path
@@ -228,6 +254,8 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
     return output_list_path
 
 def find_neighbors(base_list_path, delta_k, radius_arcmin):
+    """Query 2MASS for all the neighbors within radius_arcmin arcminutes
+    and (if not None) delta_k magnitudes"""
     _, base_list_name = split(base_list_path)
 
     radius_degrees_string = '{:1.3f}'.format(radius_arcmin / 60.)  # radius to degrees
@@ -249,6 +277,11 @@ def find_neighbors(base_list_path, delta_k, radius_arcmin):
     return output_list_path
 
 def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors):
+    """Used in `find_stars_without_neighbors` to neighbor-search and
+    then write out those stars with no neighbors to `output_list_path`
+
+    Uses a multiprocessing Lock (`output_list_lock`) to ensure
+    the multiple jobs writing to the output list are well behaved"""
     _log("neighbor searching {}".format(chunk_path))
     # run cone search
     chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin)
@@ -273,6 +306,12 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
     os.remove(chunk_path)
 
 def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
+    """Given a base list and constraints on `delta_k`, `radius_arcmin`,
+    and whether only brighter neighbors disqualify a target, execute
+    a parallelized search for neighbors in chunks from the base list.
+
+    Uses a multiprocessing Pool (`_pool`) and apply_async to farm out
+    units of work."""
     # generate filename incorporating base list name
     radius_degrees_string = '{:1.3f}'.format(radius_arcmin / 60.)  # radius to degrees
     _, base_list_name = split(base_list_path)
@@ -336,6 +375,11 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     return output_list_path
 
 def compute_list(name, spec):
+    """Given a data structure corresponding to target criteria
+    (i.e. a dict from `list_specs`), compute the base list and apply
+    target criteria that can be handled by this script
+    (e.g. neighbor star exclusion, but not enforcing
+    guide star availability)"""
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
     base_list_path = compute_base_list(k_min, k_max)
@@ -374,7 +418,7 @@ def compute_list(name, spec):
 
 if __name__ == "__main__":
     # Set up these shared/global variables
-    _pool = multiprocessing.Pool(N_PROCESSES)  # 8 processors in my Mac Pro
+    _pool = multiprocessing.Pool(N_PROCESSES)
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
