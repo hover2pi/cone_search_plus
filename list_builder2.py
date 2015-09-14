@@ -26,8 +26,20 @@ N_PROCESSES = 32
 # searches)
 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
 CHUNK_SIZE = 1000
-# This is bogus, TODO
-TWOMASS_COMPLETENESS_K = 15.5
+# Keep intermediate files for debugging
+KEEP_INTERMEDIATES = True
+# This is maybe the wrong way to handle this cutoff, but here's the
+# reasoning. 2MASS is complete to K < 14.3 in "unconfused regions" of
+# the sky. Elsewhere in the 2MASS PSC manual, it says the limits can
+# be affected by up to 1 mag in regions near the galactic plane,
+# so out of an abundance of caution I picked 13.3 as the cutoff where
+# 2MASS PSC is supplemented with additional cone searches in GSC-II
+#
+# See http://www.ipac.caltech.edu/2mass/releases/allsky/doc/sec2_2.html
+# for details
+TWOMASS_COMPLETENESS_K = 13.3
+
+RADIUS_DEGREES_FORMAT = '{:1.5f}'
 
 # These globals are set in the if __name__ == "__main__" block
 _pool = None
@@ -105,7 +117,8 @@ def run_command(command_args, input_from=None, output_to=None):
             if output_to is not None:
                 output_file.flush()
                 output_file.close()
-                os.remove(output_to)
+                if not KEEP_INTERMEDIATES:
+                    os.remove(output_to)
             raise
         else:
             if input_from is not None:
@@ -253,12 +266,19 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
         _log("create {} with neighbor-having stars removed".format(output_list_path))
     return output_list_path
 
+def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
+    # query neighbors for a line in base_list_path
+    # make an astropy table out of the votable
+    # compute the K mag from the columns in the votable
+    # test length of set of matching rows with abs(computed_k_mag - base_k_mag) < delta_k
+    return gsc_pruned_list
+
 def find_neighbors(base_list_path, delta_k, radius_arcmin):
     """Query 2MASS for all the neighbors within radius_arcmin arcminutes
     and (if not None) delta_k magnitudes"""
     _, base_list_name = split(base_list_path)
 
-    radius_degrees_string = '{:1.3f}'.format(radius_arcmin / 60.)  # radius to degrees
+    radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
     args = [
         './query_2mass',
         'RDLIST+',
@@ -276,7 +296,7 @@ def find_neighbors(base_list_path, delta_k, radius_arcmin):
 
     return output_list_path
 
-def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors):
+def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors, must_check_gsc):
     """Used in `find_stars_without_neighbors` to neighbor-search and
     then write out those stars with no neighbors to `output_list_path`
 
@@ -286,7 +306,10 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
     # run cone search
     chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin)
     # filter base list chunk
-    pruned_chunk_path = prune_stars_with_neighbors(chunk_path, chunk_neighbors_path, chunk_neighbors_path + '.pruned', only_reject_brighter_neighbors)
+    pruned_chunk_path = prune_stars_with_neighbors(chunk_path, chunk_neighbors_path, chunk_path + '.pruned', only_reject_brighter_neighbors)
+    # check GSC if necessary
+    # if must_check_gsc:
+        # pruned_chunk_path = gsc_prune_stars_with_neighbors(pruned_chunk_path, pruned_chunk_path + '.gsc_pruned', delta_k, radius_arcmin, only_reject_brighter_neighbors)
 
     # append kept stars to final list
     _log("Append remaining stars from {} to {}".format(pruned_chunk_path, output_list_path))
@@ -299,13 +322,14 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
                 output_list.write(line)
     # remove chunk and neighbors for chunk
     _log("remove {}".format(pruned_chunk_path))
-    os.remove(pruned_chunk_path)
     _log("remove {}".format(chunk_neighbors_path))
-    os.remove(chunk_neighbors_path)
     _log("remove {}".format(chunk_path))
-    os.remove(chunk_path)
+    if not KEEP_INTERMEDIATES:
+        os.remove(pruned_chunk_path)
+        os.remove(chunk_neighbors_path)
+        os.remove(chunk_path)
 
-def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
+def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors, must_check_gsc):
     """Given a base list and constraints on `delta_k`, `radius_arcmin`,
     and whether only brighter neighbors disqualify a target, execute
     a parallelized search for neighbors in chunks from the base list.
@@ -313,7 +337,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     Uses a multiprocessing Pool (`_pool`) and apply_async to farm out
     units of work."""
     # generate filename incorporating base list name
-    radius_degrees_string = '{:1.3f}'.format(radius_arcmin / 60.)  # radius to degrees
+    radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
     _, base_list_name = split(base_list_path)
     if delta_k is not None:
         delta_k_string = '{:1.1f}'.format(delta_k)
@@ -362,7 +386,8 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 radius_arcmin,
                 output_list_path,
                 output_list_lock,
-                only_reject_brighter_neighbors
+                only_reject_brighter_neighbors,
+                must_check_gsc
             )
         )
         results.append(res)
@@ -389,20 +414,26 @@ def compute_list(name, spec):
     # won't be used as the base for a subsequent cone-search
     # the intermediate_list_path holds the current base list
     intermediate_list_path = base_list_path
+    # If one of the criteria puts us over the 2MASS completeness limit
+    # we need to go check GSC-II later:
+    must_check_gsc = False
     if len(neighbor_criteria) > 0:
         for nc in neighbor_criteria:
             if k_max + nc['delta_k'] > TWOMASS_COMPLETENESS_K:
                 _log("Warning: For {} < K < {} and deltaK <= {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
                     k_min, k_max, nc['delta_k'], k_max + nc['delta_k'], TWOMASS_COMPLETENESS_K
                 ))
+                must_check_gsc = True
             _log("for {} prune neighbors deltaK <= {} mag; r <= {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
-            intermediate_list_path = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False)
+            intermediate_list_path = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False, must_check_gsc=must_check_gsc)
+            _log("Got {}".format(intermediate_list_path))
 
     brighter_neighbors_r_arcmin = spec.get('no_brighter_neighbors_r_arcmin')
     if brighter_neighbors_r_arcmin is not None:
         # can't supply DK_MAX here, since we'll miss some bright neighbors unless we set DK_MAX high enough that it's useless
         _log("for {} prune brighter neighbors in r {}".format(intermediate_list_path, brighter_neighbors_r_arcmin))
-        pruned_list_path = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True)
+        pruned_list_path = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True, must_check_gsc=False)
+        _log("Got {}".format(pruned_list_path))
     else:
         pruned_list_path = intermediate_list_path
 
