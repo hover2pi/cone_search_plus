@@ -399,6 +399,21 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
         output_list.close()
     return output_list_path
 
+def remove_extended_sources(path):
+    """Remove sources with 'EEE' qual flags indicating an extended
+    source in all bands"""
+    outpath = path + "_good"
+    n_pruned = 0
+    with open(outpath, 'w') as fout:
+        with open(path, 'r') as fin:
+            for line in fin:
+                if 'EEE' in line:
+                    n_pruned += 1
+                    continue
+                fout.write(line)
+    _log("Pruned {} sources that showed up as extended".format(n_pruned))
+    return outpath
+
 def compute_list(name, spec):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
@@ -408,6 +423,7 @@ def compute_list(name, spec):
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
     base_list_path = compute_base_list(k_min, k_max)
+    base_list_path = remove_extended_sources(base_list_path)
     neighbor_criteria = spec.get('neighbors', [])
 
     # neighbor criteria are applied iteratively, so base stars pruned by one set of criteria
