@@ -209,7 +209,7 @@ def compute_base_list(k_min, k_max):
         north_path = base_list_path + '.north'
         run_command(north_args, output_to=north_path)
 
-        south_args = args + ['EB_MIN={}'.format(-85), 'EB_MAX={}'.format(-90)]
+        south_args = args + ['EB_MAX={}'.format(-85), 'EB_MIN={}'.format(-90)]
         south_path = base_list_path + '.south'
         run_command(south_args, output_to=south_path)
 
