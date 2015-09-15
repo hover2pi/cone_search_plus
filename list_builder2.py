@@ -14,7 +14,7 @@ from os.path import split, join, exists
 # ----> per casual tests and Jay's email, handles singularities at poles
 # TODO: generate sky plots of results
 
-from list_specs import target_lists
+from list_specs import target_lists, jay_lists
 
 # Skip anything that touches the filesystem (for debugging)
 PRETEND = False
@@ -38,6 +38,11 @@ KEEP_INTERMEDIATES = True
 # See http://www.ipac.caltech.edu/2mass/releases/allsky/doc/sec2_2.html
 # for details
 TWOMASS_COMPLETENESS_K = 13.3
+# For debugging, feed a list of stars with supposedly no neighbors
+# back into an RDLIST+ search and ensure no neighbors are found
+# (doesn't work when the spec says no *brighter* neighbors, since
+# that needs more than just query_2mass to apply)
+DOUBLE_CHECK_NEIGHBORS = False
 
 RADIUS_DEGREES_FORMAT = '{:1.5f}'
 
@@ -160,7 +165,7 @@ def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
     else:
         chunk = None
     chunk_paths = [base_list_path + chunk_template.format(1)]
-    _log('first chunk = {}'.format(chunk_paths[0]))
+    # _log('first chunk = {}'.format(chunk_paths[0]))
     with open(base_list_path, 'r') as base_list:
         for idx, line in enumerate(base_list):
             if not PRETEND:
@@ -174,7 +179,7 @@ def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
                 if not PRETEND:
                     chunk = open(base_list_path + chunk_template.format(chunk_count), 'w')
                 chunk_paths.append(base_list_path + chunk_template.format(chunk_count))
-                _log('next chunk = {}'.format(chunk_paths[-1]))
+                # _log('next chunk = {}'.format(chunk_paths[-1]))
     if not PRETEND:
         chunk.close()
     return chunk_paths
@@ -199,7 +204,7 @@ def compute_base_list(k_min, k_max):
     # test existence
     if exists(base_list_path):
         _log("{} exists".format(base_list_path))
-        return base_list_path
+        return base_list_path, count_non_comment_lines(base_list_path)
     if not CVZ_ONLY:
         # call subprocess
         # write to scratch file
@@ -214,8 +219,8 @@ def compute_base_list(k_min, k_max):
         run_command(south_args, output_to=south_path)
 
         run_command(['cat', north_path, south_path], output_to=base_list_path)
-    # return file path
-    return base_list_path
+
+    return base_list_path, count_non_comment_lines(base_list_path)
 
 def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_path, only_reject_brighter_neighbors):
     """Takes a base list (or chunk of a base list) and a corresponding
@@ -264,7 +269,7 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
         _log("create {} with brighter-neighbor-having stars removed".format(output_list_path))
     else:
         _log("create {} with neighbor-having stars removed".format(output_list_path))
-    return output_list_path
+    return output_list_path, len(base_indices)
 
 def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
     # query neighbors for a line in base_list_path
@@ -303,10 +308,22 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
     Uses a multiprocessing Lock (`output_list_lock`) to ensure
     the multiple jobs writing to the output list are well behaved"""
     _log("neighbor searching {}".format(chunk_path))
+    starting_total = count_non_comment_lines(chunk_path)
     # run cone search
     chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin)
     # filter base list chunk
-    pruned_chunk_path = prune_stars_with_neighbors(chunk_path, chunk_neighbors_path, chunk_path + '.pruned', only_reject_brighter_neighbors)
+    pruned_chunk_path, n_kept_stars = prune_stars_with_neighbors(chunk_path, chunk_neighbors_path, chunk_path + '.pruned', only_reject_brighter_neighbors)
+    _log("Chunk pruned with dk < {} r < {}: {} of {} remaining".format(delta_k, radius_arcmin, n_kept_stars, starting_total))
+    # pedantically double-check this output
+    if DOUBLE_CHECK_NEIGHBORS and delta_k is not None:
+        radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
+        commandstring = "./query_2mass RDLIST+ DR_MIN=0.001 DR_MAX={} DK_MAX={} < {}".format(radius_degrees_string, delta_k, pruned_chunk_path)
+        _log(commandstring)
+        output = subprocess.check_output(commandstring, shell=True)
+        if output != '#NARGs:  4\n# OPEN BASE.DATA for map...\n# OPEN BASE.DATA for work...\n  \n END OF INPUT FILE...\n  \n':
+            raise ValueError("Failed double-check of {} with dr {} and dk {}. Output was\n\n".format(pruned_chunk_path, radius_degrees_string, delta_k, output))
+        else:
+            _log("Checked output from the above command, consistent with all 2MASS-neighbor-having-stars removed")
     # check GSC if necessary
     # if must_check_gsc:
         # pruned_chunk_path = gsc_prune_stars_with_neighbors(pruned_chunk_path, pruned_chunk_path + '.gsc_pruned', delta_k, radius_arcmin, only_reject_brighter_neighbors)
@@ -328,6 +345,7 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
         os.remove(pruned_chunk_path)
         os.remove(chunk_neighbors_path)
         os.remove(chunk_path)
+    return n_kept_stars
 
 def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors, must_check_gsc):
     """Given a base list and constraints on `delta_k`, `radius_arcmin`,
@@ -346,14 +364,14 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
         delta_k_string = ''
         neighbor_list_name = 'neighbors_r_{}_for_{}'.format(radius_degrees_string, base_list_name)
     neighbor_list_path = join('cache', neighbor_list_name)
-    _log("base name for neighbor search chunks {}".format(neighbor_list_name))
+    # _log("base name for neighbor search chunks {}".format(neighbor_list_name))
     
     _, base_list_name = split(base_list_path)
     neighbor_list_name, _ = neighbor_list_name.split('_for_')
     output_list_name = '{}_without_{}'.format(base_list_name, neighbor_list_name)
     output_list_path = join('cache', output_list_name)
     if exists(output_list_path):
-        return output_list_path
+        return output_list_path, count_non_comment_lines(output_list_path)
 
     if not PRETEND:
         output_list = open(output_list_path, 'w')
@@ -373,7 +391,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
 
     # chunk the base list
     chunk_paths = chunk_list(base_list_path)
-    _log("chunk_paths = {}".format(chunk_paths))
+    # _log("chunk_paths = {}".format(chunk_paths))
     # neighbor search all the base chunks
     results = []
     for chunk_path in chunk_paths:
@@ -392,27 +410,50 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
         )
         results.append(res)
 
+    n_stars_kept = 0
     for r in results:
-        r.get()  # n.b. even though the helper returns None, want to see any exceptions propagate up
+        n_stars_kept += r.get()
 
     if not PRETEND:
         output_list.close()
-    return output_list_path
+    return output_list_path, n_stars_kept
+
+def count_non_comment_lines(path):
+    """Counts lines in file that have data (non-empty, non-#-prefixed-comment)"""
+    non_comment_lines = 0
+    if not PRETEND:
+        with open(path, 'r') as f:
+            for line in f:
+                if len(line) > 0 and line[0] == '#':
+                    continue
+                elif len(line.strip()) == 0:
+                    continue
+                else:
+                    non_comment_lines += 1
+    return non_comment_lines
 
 def remove_extended_sources(path):
     """Remove sources with 'EEE' qual flags indicating an extended
     source in all bands"""
     outpath = path + "_good"
     n_pruned = 0
-    with open(outpath, 'w') as fout:
-        with open(path, 'r') as fin:
-            for line in fin:
-                if 'EEE' in line:
-                    n_pruned += 1
-                    continue
-                fout.write(line)
-    _log("Pruned {} sources that showed up as extended".format(n_pruned))
-    return outpath
+    n_base_stars = 0
+    if not PRETEND:
+        with open(outpath, 'w') as fout:
+            with open(path, 'r') as fin:
+                for line in fin:
+                    if len(line) > 0 and line[0] == '#':
+                        continue
+                    else:
+                        n_base_stars += 1
+
+                    if 'AAA' not in line:
+                        n_pruned += 1
+                        continue
+                    fout.write(line)
+        _log("Pruned {} sources that showed up as extended".format(n_pruned))
+    n_kept = n_base_stars - n_pruned
+    return outpath, n_kept
 
 def compute_list(name, spec):
     """Given a data structure corresponding to target criteria
@@ -420,10 +461,21 @@ def compute_list(name, spec):
     target criteria that can be handled by this script
     (e.g. neighbor star exclusion, but not enforcing
     guide star availability)"""
+    report = []
+
+    def _report(message):
+        report.append(message)
+
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
-    base_list_path = compute_base_list(k_min, k_max)
-    base_list_path = remove_extended_sources(base_list_path)
+    base_list_path, n_base_sources = compute_base_list(k_min, k_max)
+    msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
+    _log(msg)
+    _report(msg)
+    base_list_path, n_base_minus_extended = remove_extended_sources(base_list_path)
+    msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
+    _log(msg)
+    _report(msg)
     neighbor_criteria = spec.get('neighbors', [])
 
     # neighbor criteria are applied iteratively, so base stars pruned by one set of criteria
@@ -436,31 +488,44 @@ def compute_list(name, spec):
     if len(neighbor_criteria) > 0:
         for nc in neighbor_criteria:
             if k_max + nc['delta_k'] > TWOMASS_COMPLETENESS_K:
-                _log("Warning: For {} < K < {} and deltaK <= {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
+                warning = "Warning: For {} < K < {} and deltaK < {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
                     k_min, k_max, nc['delta_k'], k_max + nc['delta_k'], TWOMASS_COMPLETENESS_K
-                ))
+                )
+                _log(warning)
+                _report(warning)
                 must_check_gsc = True
-            _log("for {} prune neighbors deltaK <= {} mag; r <= {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
-            intermediate_list_path = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False, must_check_gsc=must_check_gsc)
+            _log("for {} prune neighbors deltaK < {} mag; r < {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
+            intermediate_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False, must_check_gsc=must_check_gsc)
             _log("Got {}".format(intermediate_list_path))
+            msg = "After excluding stars with neighbors in deltaK < {} mag; r < {} arcmin: {} sources".format(nc['delta_k'], nc['r_arcmin'], n_kept)
+            _log(msg)
+            _report(msg)
 
     brighter_neighbors_r_arcmin = spec.get('no_brighter_neighbors_r_arcmin')
     if brighter_neighbors_r_arcmin is not None:
         # can't supply DK_MAX here, since we'll miss some bright neighbors unless we set DK_MAX high enough that it's useless
         _log("for {} prune brighter neighbors in r {}".format(intermediate_list_path, brighter_neighbors_r_arcmin))
-        pruned_list_path = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True, must_check_gsc=False)
+        pruned_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True, must_check_gsc=False)
         _log("Got {}".format(pruned_list_path))
+        msg = "After excluding stars with brighter neighbors in r < {}: {} sources".format(brighter_neighbors_r_arcmin, n_kept)
+        _log(msg)
+        _report(msg)
     else:
         pruned_list_path = intermediate_list_path
 
     if CVZ_ONLY:
         dest_path = join('target_lists_cvz_only', name)
+        _report("CVZ only")
     else:
         dest_path = join('target_lists', name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
     if not PRETEND:
         shutil.copy(pruned_list_path, dest_path)
 
+    with open(dest_path + '.report', 'w') as f:
+        f.write('\n'.join(report))
+        f.write("\n")
+        _log("Wrote report to {}".format(dest_path + ".report"))
     return dest_path
 
 if __name__ == "__main__":
