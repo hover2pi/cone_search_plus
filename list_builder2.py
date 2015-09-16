@@ -9,9 +9,9 @@ import shutil
 from pprint import pformat
 from os.path import split, join, exists
 
-# TODO: warn when neighbor criteria push below completeness limit in K for 2MASS
-# TODO: flag stars at poles in RA/Dec as potentially having undetected neighbors
-# ----> per casual tests and Jay's email, handles singularities at poles
+# DONE: warn when neighbor criteria push below completeness limit in K for 2MASS
+# N/A : flag stars at poles in RA/Dec as potentially having undetected neighbors
+#        -> per casual tests and Jay's email, handles singularities at poles
 # TODO: generate sky plots of results
 
 from list_specs import target_lists, jay_lists
@@ -229,7 +229,7 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
     in the neighbor list"""
     if exists(output_list_path):
         _log("{} exists".format(output_list_path))
-        return output_list_path
+        return output_list_path, count_non_comment_lines(output_list_path)
 
     if not PRETEND:
         base_indices, base_lookup = load_base_stars(base_list_path)
@@ -308,6 +308,7 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
     Uses a multiprocessing Lock (`output_list_lock`) to ensure
     the multiple jobs writing to the output list are well behaved"""
     _log("neighbor searching {}".format(chunk_path))
+    _log("args:", (chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors, must_check_gsc))
     starting_total = count_non_comment_lines(chunk_path)
     # run cone search
     chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin)
@@ -461,7 +462,7 @@ def compute_list(name, spec):
     target criteria that can be handled by this script
     (e.g. neighbor star exclusion, but not enforcing
     guide star availability)"""
-    report = []
+    report = [name,]
 
     def _report(message):
         report.append(message)
