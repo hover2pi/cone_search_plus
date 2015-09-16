@@ -6,6 +6,11 @@ import datetime
 import multiprocessing
 import subprocess
 import shutil
+import numpy as np
+import requests
+from astropy.io import ascii
+from astropy.table import Table
+from scipy.interpolate import interp1d
 from pprint import pformat
 from os.path import split, join, exists
 
@@ -26,6 +31,8 @@ N_PROCESSES = 32
 # searches)
 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
 CHUNK_SIZE = 1000
+# Switch off multiprocessing for better tracebacks in debugging
+MULTIPROCESS_CHUNKS = True
 # Keep intermediate files for debugging
 KEEP_INTERMEDIATES = True
 # This is maybe the wrong way to handle this cutoff, but here's the
@@ -45,6 +52,7 @@ TWOMASS_COMPLETENESS_K = 13.3
 DOUBLE_CHECK_NEIGHBORS = False
 
 RADIUS_DEGREES_FORMAT = '{:1.5f}'
+SERVICE_URL_TEMPLATE = "http://gsss.stsci.edu/webservices/vo/ConeSearch.aspx?RA={ra:03.9}&DEC={dec:02.8}&SR={rdeg}&FORMAT=CSV&CAT=GSC23"
 
 # These globals are set in the if __name__ == "__main__" block
 _pool = None
@@ -272,11 +280,64 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
     return output_list_path, len(base_indices)
 
 def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
-    # query neighbors for a line in base_list_path
-    # make an astropy table out of the votable
-    # compute the K mag from the columns in the votable
-    # test length of set of matching rows with abs(computed_k_mag - base_k_mag) < delta_k
-    return gsc_pruned_list
+    radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
+    base_list = ascii.read(base_list_path, names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'])
+    # output_list = Table(dtype=base_list.dtype)
+    # The above doesn't work to make an empty table (it says it has no columns)
+    # so be annoyingly thorough in specifying it...
+    output_list = Table(names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'], dtype=['<f8', '<f8', '<f8', '<f8', '<f8', 'S3', 'S9'])
+    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_approx_k_too_bright = 0, 0, 0, 0
+    bj_rf = np.array([0.0, 0.5, 1.0, 2.0, 2.5, 3.0])  # B_J is JpgMag, R_F is FpgMag, bj_rf = JpgMag - FpgMag
+    c_bk = np.array([1.5, 1.5, 2.3, 4.8, 7.0, 7.0])
+    c_bk_interpolator = interp1d(bj_rf, c_bk)
+
+    for row in base_list:
+        query_url = SERVICE_URL_TEMPLATE.format(
+            ra=row['RA'],
+            dec=row['Dec'],
+            rdeg=radius_degrees_string
+        )
+        resp = requests.get(query_url)
+        # make an astropy table out of the votable
+        table = ascii.read(resp.text)
+        # neighbors will be those stars without KMag (because if they had KMags, they'd be in 2MASS)
+        neighbors = table[table['KMag'] == 99.99]
+        # find any non-99 kmag values. there should not be any, if the query_2mass tool worked right
+        if len(table[(table['KMag'] != 99.99) & (table['class'] == 0)]) != 1:
+            # found a 2MASS neighbor that wasn't found in the query_2mass step
+            # it's safest to just discard this star; we don't need to transform
+            # GSC magnitudes to KMag or anything
+            count_2mass_artifacts += 1
+            continue
+        if len(neighbors) == 0:
+            # if no neighbors at *all*, go right to appending to output list
+            output_list.add_row(row)
+            count_zero_neighbors += 1
+            continue
+        if np.any(neighbors['FpgMag'] == 99.99) or np.any(neighbors['JpgMag'] == 99.99):
+            # can't compute transformed magnitudes for one or more neighbors
+            # so we must discard this star
+            count_missing_gscmag += 1
+            continue
+        else:
+            # interpolate a K mag using color relation in Anderson 2009
+            c_bk_approx = c_bk_interpolator(neighbors['JpgMag'] - neighbors['FpgMag']) # (B_J - R_F)
+            # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
+            k_approx = neighbors['JpgMag'] - c_bk_approx
+            # test length of set of matching rows with abs(computed_neighbor_k_mag - base_k_mag) < delta_k
+            neighbor_delta_ks = np.abs(k_approx - row['K'])
+            if np.any(neighbor_delta_ks >= delta_k):
+                count_approx_k_too_bright += 1
+                continue
+            else:
+                output_list.add_row(row)
+    output_list.write(output_list_path, format='ascii.no_header')
+    _log("Kept", len(output_list), "of", len(base_list))
+    _log("Entries kept because zero neighbors were found:", count_zero_neighbors)
+    _log("Entries discrarded because of 2MASS artifacts: ", count_2mass_artifacts)
+    _log("Entries discarded because Fpg or Jpg magnitudes weren't available for neighbors:", count_missing_gscmag)
+    _log("Entries discarded because approximate K mag (from Jpg - Fpg color) too bright:", count_approx_k_too_bright)
+    return output_list_path, len(output_list)
 
 def find_neighbors(base_list_path, delta_k, radius_arcmin):
     """Query 2MASS for all the neighbors within radius_arcmin arcminutes
@@ -326,18 +387,26 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
         else:
             _log("Checked output from the above command, consistent with all 2MASS-neighbor-having-stars removed")
     # check GSC if necessary
-    # if must_check_gsc:
-        # pruned_chunk_path = gsc_prune_stars_with_neighbors(pruned_chunk_path, pruned_chunk_path + '.gsc_pruned', delta_k, radius_arcmin, only_reject_brighter_neighbors)
+    if must_check_gsc and n_kept_stars > 0:
+        pruned_chunk_path, n_kept_stars = gsc_prune_stars_with_neighbors(pruned_chunk_path, pruned_chunk_path + '.gsc_pruned', delta_k, radius_arcmin, only_reject_brighter_neighbors)
+        _log("Chunk pruned using GSC with dk < {} r < {}: {} of {} remaining".format(delta_k, radius_arcmin, n_kept_stars, starting_total))
 
     # append kept stars to final list
     _log("Append remaining stars from {} to {}".format(pruned_chunk_path, output_list_path))
     if PRETEND:
         return  # bail before we touch any files
-    with output_list_lock:
-        _log("Acquired lock on {}".format(output_list_path))
-        with open(output_list_path, 'a') as output_list:
-            for line in open(pruned_chunk_path):
-                output_list.write(line)
+    if n_kept_stars > 0:
+        # don't bother waiting on the lock if there's nothing to write
+        if output_list_lock is not None:
+            with output_list_lock:
+                _log("Acquired lock on {}".format(output_list_path))
+                with open(output_list_path, 'a') as output_list:
+                    for line in open(pruned_chunk_path):
+                        output_list.write(line)
+        else:
+            with open(output_list_path, 'a') as output_list:
+                for line in open(pruned_chunk_path):
+                    output_list.write(line)
     # remove chunk and neighbors for chunk
     _log("remove {}".format(pruned_chunk_path))
     _log("remove {}".format(chunk_neighbors_path))
@@ -394,27 +463,39 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     chunk_paths = chunk_list(base_list_path)
     # _log("chunk_paths = {}".format(chunk_paths))
     # neighbor search all the base chunks
-    results = []
-    for chunk_path in chunk_paths:
-        _log("Spawning for {}".format(chunk_path))
-        res = _pool.apply_async(
-            _process_chunk_for_neighbors,
-            (
+    if MULTIPROCESS_CHUNKS:
+        results = []
+        for chunk_path in chunk_paths:
+            _log("Spawning for {}".format(chunk_path))
+            res = _pool.apply_async(
+                _process_chunk_for_neighbors,
+                (
+                    chunk_path,
+                    delta_k,
+                    radius_arcmin,
+                    output_list_path,
+                    output_list_lock,
+                    only_reject_brighter_neighbors,
+                    must_check_gsc
+                )
+            )
+            results.append(res)
+
+        n_stars_kept = 0
+        for r in results:
+            n_stars_kept += r.get()
+    else:
+        n_stars_kept = 0
+        for chunk_path in chunk_paths:
+            n_stars_kept += _process_chunk_for_neighbors(
                 chunk_path,
                 delta_k,
                 radius_arcmin,
                 output_list_path,
-                output_list_lock,
+                None,
                 only_reject_brighter_neighbors,
                 must_check_gsc
             )
-        )
-        results.append(res)
-
-    n_stars_kept = 0
-    for r in results:
-        n_stars_kept += r.get()
-
     if not PRETEND:
         output_list.close()
     return output_list_path, n_stars_kept
