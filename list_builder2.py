@@ -34,7 +34,7 @@ CHUNK_SIZE = 1000
 # Switch off multiprocessing for better tracebacks in debugging
 MULTIPROCESS_CHUNKS = True
 # Keep intermediate files for debugging
-KEEP_INTERMEDIATES = True
+KEEP_INTERMEDIATES = False
 # This is maybe the wrong way to handle this cutoff, but here's the
 # reasoning. 2MASS is complete to K < 14.3 in "unconfused regions" of
 # the sky. Elsewhere in the 2MASS PSC manual, it says the limits can
@@ -514,9 +514,9 @@ def count_non_comment_lines(path):
                     non_comment_lines += 1
     return non_comment_lines
 
-def remove_extended_sources(path):
-    """Remove sources with 'EEE' qual flags indicating an extended
-    source in all bands"""
+def remove_non_AAA_sources(path):
+    """Remove all sources with PSC qual flags other than AAA
+    (in other words, keep only those with good photometry in J/H/K)"""
     outpath = path + "_good"
     n_pruned = 0
     n_base_stars = 0
@@ -533,7 +533,7 @@ def remove_extended_sources(path):
                         n_pruned += 1
                         continue
                     fout.write(line)
-        _log("Pruned {} sources that showed up as extended".format(n_pruned))
+        _log("Pruned {} sources with non-AAA quality flags".format(n_pruned))
     n_kept = n_base_stars - n_pruned
     return outpath, n_kept
 
@@ -554,7 +554,7 @@ def compute_list(name, spec):
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
     _log(msg)
     _report(msg)
-    base_list_path, n_base_minus_extended = remove_extended_sources(base_list_path)
+    base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
     msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
     _log(msg)
     _report(msg)
@@ -632,7 +632,7 @@ if __name__ == "__main__":
         'initial_image_mosaic': target_lists['initial_image_mosaic'],
         'global_alignment': target_lists['global_alignment'],
         'fine_phasing_routine_maintenance': target_lists['fine_phasing_routine_maintenance'],
-        'mimf_miri': target_lists['mimf_miri'],
+        # 'mimf_miri': target_lists['mimf_miri'],
     }
 
     for name, spec in rest_of_the_target_lists.items():
