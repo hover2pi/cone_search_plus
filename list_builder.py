@@ -286,7 +286,7 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
     # The above doesn't work to make an empty table (it says it has no columns)
     # so be annoyingly thorough in specifying it...
     output_list = Table(names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'], dtype=['<f8', '<f8', '<f8', '<f8', '<f8', 'S3', 'S9'])
-    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_approx_k_too_bright = 0, 0, 0, 0
+    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_cant_interpolate, count_approx_k_too_bright = 0, 0, 0, 0, 0
     bj_rf = np.array([0.0, 0.5, 1.0, 2.0, 2.5, 3.0])  # B_J is JpgMag, R_F is FpgMag, bj_rf = JpgMag - FpgMag
     c_bk = np.array([1.5, 1.5, 2.3, 4.8, 7.0, 7.0])
     c_bk_interpolator = interp1d(bj_rf, c_bk)
@@ -321,7 +321,13 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
             continue
         else:
             # interpolate a K mag using color relation in Anderson 2009
-            c_bk_approx = c_bk_interpolator(neighbors['JpgMag'] - neighbors['FpgMag']) # (B_J - R_F)
+            try:
+                c_bk_approx = c_bk_interpolator(neighbors['JpgMag'] - neighbors['FpgMag']) # (B_J - R_F)
+            except ValueError:
+                _log("Out of range (JpgMag - FpgMag) value processing neighbors of {}".format(base_list_path))
+                _log(neighbors)
+                count_cant_interpolate += 1
+                continue
             # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
             k_approx = neighbors['JpgMag'] - c_bk_approx
             # test length of set of matching rows with abs(computed_neighbor_k_mag - base_k_mag) < delta_k
@@ -336,6 +342,7 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
     _log("Entries kept because zero neighbors were found:", count_zero_neighbors)
     _log("Entries discrarded because of 2MASS artifacts: ", count_2mass_artifacts)
     _log("Entries discarded because Fpg or Jpg magnitudes weren't available for neighbors:", count_missing_gscmag)
+    _log("Entries discarded because can't approximate K mag (input out of range):", count_cant_interpolate)
     _log("Entries discarded because approximate K mag (from Jpg - Fpg color) too bright:", count_approx_k_too_bright)
     return output_list_path, len(output_list)
 
