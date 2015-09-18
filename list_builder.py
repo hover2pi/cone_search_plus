@@ -281,7 +281,14 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
 
 def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
     radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
-    base_list = ascii.read(base_list_path, names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'])
+    base_list = ascii.read(
+        base_list_path,
+        names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'],
+        guess=False,
+        format='basic',
+        comment=r'^#.+',
+        data_start=0  # workaround for astropy.table eating data: https://github.com/astropy/astropy/issues/4160#issuecomment-141461637
+    )
     # output_list = Table(dtype=base_list.dtype)
     # The above doesn't work to make an empty table (it says it has no columns)
     # so be annoyingly thorough in specifying it...
@@ -298,8 +305,8 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
             rdeg=radius_degrees_string
         )
         resp = requests.get(query_url)
-        # make an astropy table out of the votable
-        table = ascii.read(resp.text)
+        # make an astropy table out of the csv table
+        table = ascii.read(resp.text, guess=False, format='csv', comment=r'#.+')
         # neighbors will be those stars without KMag (because if they had KMags, they'd be in 2MASS)
         neighbors = table[table['KMag'] == 99.99]
         # find any non-99 kmag values. there should not be any, if the query_2mass tool worked right
@@ -325,7 +332,6 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
                 c_bk_approx = c_bk_interpolator(neighbors['JpgMag'] - neighbors['FpgMag']) # (B_J - R_F)
             except ValueError:
                 _log("Out of range (JpgMag - FpgMag) value processing neighbors of {}".format(base_list_path))
-                _log(neighbors)
                 count_cant_interpolate += 1
                 continue
             # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
