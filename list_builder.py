@@ -24,7 +24,7 @@ from list_specs import target_lists, jay_lists
 # Skip anything that touches the filesystem (for debugging)
 PRETEND = False
 # Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
-CVZ_ONLY = True
+CVZ_ONLY = False
 # Number of workers (32 for telserv1)
 N_PROCESSES = 32
 # Number of star entries per chunk of list (chunks are inputs to cone
@@ -480,23 +480,28 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
         results = []
         for chunk_path in chunk_paths:
             _log("Spawning for {}".format(chunk_path))
-            res = _pool.apply_async(
-                _process_chunk_for_neighbors,
-                (
-                    chunk_path,
+            args = (chunk_path,
                     delta_k,
                     radius_arcmin,
                     output_list_path,
                     output_list_lock,
                     only_reject_brighter_neighbors,
-                    must_check_gsc
-                )
-            )
-            results.append(res)
+                    must_check_gsc)
+            res = _pool.apply_async(_process_chunk_for_neighbors, args)
+            results.append((res, args))
 
         n_stars_kept = 0
-        for r in results:
-            n_stars_kept += r.get()
+        for r, args in results:
+            try:
+                total = r.get()
+            except:
+                _log("Exception processing chunk:")
+                _log("_process_chunk_for_neighbors{}".format(args))
+                total = 0
+                _log("total = 0 (reassign otherwise)")
+                import code
+                code.interact(local=locals())
+            n_stars_kept += total
     else:
         n_stars_kept = 0
         for chunk_path in chunk_paths:
