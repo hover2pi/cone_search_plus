@@ -280,14 +280,20 @@ def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_p
     return output_list_path, len(base_indices)
 
 def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors):
+    _log("gsc_prune_stars_with_neighbors({}, {}, {}, {}, {})".format(
+        base_list_path,
+        output_list_path,
+        delta_k,
+        radius_arcmin,
+        only_reject_brighter_neighbors
+    ))
     radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
     base_list = ascii.read(
         base_list_path,
         names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'],
         guess=False,
-        format='basic',
-        comment=r'^#.+',
-        data_start=0  # workaround for astropy.table eating data: https://github.com/astropy/astropy/issues/4160#issuecomment-141461637
+        format='no_header',
+        comment=r'^#.+'
     )
     # output_list = Table(dtype=base_list.dtype)
     # The above doesn't work to make an empty table (it says it has no columns)
@@ -479,7 +485,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     if MULTIPROCESS_CHUNKS:
         results = []
         for chunk_path in chunk_paths:
-            _log("Spawning for {}".format(chunk_path))
+            _log("Submitting task for {}".format(chunk_path))
             args = (chunk_path,
                     delta_k,
                     radius_arcmin,
