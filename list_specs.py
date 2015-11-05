@@ -49,6 +49,7 @@ target_lists = {
             {'delta_k': 5, 'r_arcmin': 30},
             {'delta_k': 0.5, 'r_arcmin': 45},
         ),
+        'allow_non_aaa': True,
     },
     'early_commissioning': {
         'k_mag': (4.5, 5.5),

@@ -578,10 +578,11 @@ def compute_list(name, spec):
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
     _log(msg)
     _report(msg)
-    base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
-    msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
-    _log(msg)
-    _report(msg)
+    if not spec.get('allow_non_aaa', False):
+        base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
+        msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
+        _log(msg)
+        _report(msg)
     neighbor_criteria = spec.get('neighbors', [])
 
     # neighbor criteria are applied iteratively, so base stars pruned by one set of criteria
