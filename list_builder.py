@@ -506,7 +506,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 total = 0
                 _log("total = 0 (reassign otherwise)")
                 import code
-                code.interact(local=locals(), global=globals())
+                code.interact(local=dict(globals(), **locals()))
             n_stars_kept += total
     else:
         n_stars_kept = 0
