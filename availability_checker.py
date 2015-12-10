@@ -300,6 +300,8 @@ def analyze_catalog(catalog_path, kind='jay'):
         commissioning_begins,
         n_days=n_days
     )
+    avail_fname = "%s_avail.npy" % catalog_name
+    np.save(avail_fname, availability)
     
     fig = plt.figure(figsize=(14, 8))
     sky_ax = plt.subplot2grid(
