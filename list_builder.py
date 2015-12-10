@@ -301,7 +301,9 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
     # The above doesn't work to make an empty table (it says it has no columns)
     # so be annoyingly thorough in specifying it...
     output_list = Table(names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'], dtype=['<f8', '<f8', '<f8', '<f8', '<f8', 'S3', 'S9'])
-    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_cant_interpolate, count_approx_k_too_bright = 0, 0, 0, 0, 0
+    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_cant_interpolate,\
+    count_approx_k_too_bright, count_neighb_k_too_bright = 0, 0, 0, 0, 0, 0
+    count_K_est_from_NpgMag, count_K_est_from_JpgMag_minus_FpgMag, count_K_est_from_JpgMag, count_K_est_from_FpgMag = 0, 0, 0, 0
     bj_rf = np.array([0.0, 0.5, 1.0, 2.0, 2.5, 3.0])  # B_J is JpgMag, R_F is FpgMag, bj_rf = JpgMag - FpgMag
     c_bk = np.array([1.5, 1.5, 2.3, 4.8, 7.0, 7.0])
     c_bk_interpolator = interp1d(bj_rf, c_bk)
@@ -316,76 +318,85 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
         # make an astropy table out of the csv table
         table = ascii.read(resp.text, guess=False, format='csv', comment=r'#.+')
         # neighbors will be those stars without KMag (because if they had KMags, they'd be in 2MASS)
-        neighbors = table[table['KMag'] == 99.99]
         # find any non-99 kmag values. there should not be any, if the query_2mass tool worked right
         # NTZ: GSC neighbors with defined K mag are fine as long as they are fainter than the isolation spec;
-        #      consistency with query_2mass is easily checked with one extra comparison step.
-        if len(table[(table['KMag'] != 99.99) & (table['class'] == 0)]) != 1:
-            brightest_neighb_Kmag = np.sort(table['KMag'])[1]
-            if brightest_neighb_Kmag < (row['K'] + delta_k):
-                # found a 2MASS neighbor that wasn't found in the query_2mass step
-                # it's safest to just discard this star; we don't need to transform
-                # GSC magnitudes to KMag or anything
-                count_2mass_artifacts += 1
-                _log("conflicting 2MASS neighbor(s):")
-                _log("query_url: ", query_url)
-                continue
+        #      build in a consistency check with query_2mass.
+        if len(table[(table['KMag'] != 99.99)]) != 1:
+            # More than one star in the GSC with a defined K mag; need to separate the target candidate.
+            id_target = table[table['KMag'] == np.sort(table['KMag'])[0]]['objID'][0] # Get the ID number of the target candidate
+            neighbors = table[table['objID'] != id_target]
+        else:
+            neighbors = table[table['KMag'] == 99.99]
         if len(neighbors) == 0:
             # if no neighbors at *all*, go right to appending to output list
             output_list.add_row(row)
             count_zero_neighbors += 1
             continue
-        if np.any(neighbors['FpgMag'] == 99.99) or np.any(neighbors['JpgMag'] == 99.99):
-            # can't immediately compute transformed magnitudes for one or more neighbors
-            F_miss = ( neighbors['FpgMag'] == 99.99 )
-            J_miss = ( neighbors['JpgMag'] == 99.99 )
-            N_miss = ( neighbors['NpgMag'] == 99.99 )
-            #if np.any(neighbors['FpgMag'] == 99.99 and neighbors['JpgMag'] == 99.99):
-            if np.any(F_miss & J_miss & N_miss):
-                # Discard if a neighbor lacks F, J, and N mags
-                count_missing_gscmag += 1
-                _log("A neighbor missing F, J, N mags:")
-                _log("query_url: ", query_url)
-                continue
-            elif np.any(F_miss & J_miss):
-            else:
-                # Assume a pessimistic (red) J - F color of 2.5, then
-                # convert to K mag in accordance with Anderson 2009,
-                # with J - K = 7.0
-                J_miss_rows = np.where( J_miss.data )
-                for mr in J_miss_rows[0]:
-                    neighbors['JpgMag'][mr] = neighbors['FpgMag'][mr] + 2.5
-                k_approx = neighbors['JpgMag'] - 7.0
-                neighbor_delta_ks = np.abs(k_approx - row['K'])
-                if np.any(neighbor_delta_ks >= delta_k):
-                    count_approx_k_too_bright += 1
-                    continue
-                else:
-                    output_list.add_row(row)
+        F_miss = ( neighbors['FpgMag'] == 99.99 )
+        J_miss = ( neighbors['JpgMag'] == 99.99 )
+        N_miss = ( neighbors['NpgMag'] == 99.99 )
+        K_miss = ( neighbors['KMag'] == 99.99 )
+
+        if np.any(F_miss & J_miss & N_miss & K_miss):
+            # Discard target candidate if any neighbor lacks R_F, B_J, I_N, and K mags
+            count_missing_gscmag += 1
+            _log("A neighbor missing F, J, N, and K mags:")
+            _log("query_url: ", query_url)
+            continue
         else:
-            # interpolate a K mag using color relation in Anderson 2009
-            try:
-                c_bk_approx = c_bk_interpolator(neighbors['JpgMag'] - neighbors['FpgMag']) # (B_J - R_F)
-            except ValueError:
-                _log("Out of range (JpgMag - FpgMag) value processing neighbors of {}".format(base_list_path))
-                count_cant_interpolate += 1
-                continue
-            # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
-            k_approx = neighbors['JpgMag'] - c_bk_approx
-            # test length of set of matching rows with abs(computed_neighbor_k_mag - base_k_mag) < delta_k
-            neighbor_delta_ks = np.abs(k_approx - row['K'])
-            if np.any(neighbor_delta_ks >= delta_k):
+            # All neighbors have enough flux information to either estimate, or
+            # at least place a lower bound on their K mags
+            K_miss_rows = np.where( K_miss.data )
+            for kmr in K_miss_rows[0]:
+                if F_miss[kmr] & J_miss[kmr]:
+                    # Using only the N mag, place lower limit on K with an extremely conservative (red) I - K color
+                    neighbors['KMag'][kmr] = neighbors['NpgMag'][kmr] - 4.
+                    count_K_est_from_NpgMag += 1
+                elif F_miss[kmr]:
+                    # Place lower limit on K with an extremely red B_J - K = 7.0 (Anderson 2009)
+                    neighbors['KMag'][kmr] = neighbors['JpgMag'][kmr] - 7.
+                    count_K_est_from_JpgMag += 1
+                elif J_miss[kmr]:
+                    # Place lower limit on K with an extremely red R_F - K = 4.5 (Anderson 2009)
+                    neighbors['KMag'][kmr] = neighbors['FpgMag'][kmr] - 4.5
+                    count_K_est_from_FpgMag += 1
+                else:
+                    Jpg_minus_Fpg = neighbors['JpgMag'][kmr] - neighbors['FpgMag'][kmr]
+                    if np.min(bj_rf) <= Jpg_minus_Fpg <= np.max(bj_rf):
+                        # interpolate a K mag using color relation in Anderson 2009
+                        try:
+                            c_bk_approx = c_bk_interpolator(neighbors['JpgMag'][kmr] - neighbors['FpgMag'][kmr]) # (B_J - R_F)
+                        except ValueError:
+                            _log("Out of range (JpgMag - FpgMag) value processing neighbors of {}".format(base_list_path))
+                            count_cant_interpolate += 1
+                            continue
+                        # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
+                        neighbors['KMag'][kmr] = neighbors['JpgMag'][kmr] - c_bk_approx
+                        count_K_est_from_JpgMag_minus_FpgMag += 1
+                    else:
+                        # Assume a red R_F - K color
+                        neighbors['KMag'][kmr] = neighbors['FpgMag'][kmr] - 4.5
+                        count_K_est_from_FpgMag += 1
+
+            if np.any(neighbors['KMag'] < row['K'] + delta_k):
+                _log("Neighbor with violating K mag:")
+                _log("query_url: ", query_url)
                 count_approx_k_too_bright += 1
                 continue
             else:
                 output_list.add_row(row)
+
     output_list.write(output_list_path, format='ascii.no_header')
     _log("Kept", len(output_list), "of", len(base_list))
     _log("Entries kept because zero neighbors were found:", count_zero_neighbors)
-    _log("Entries discarded because of 2MASS artifacts: ", count_2mass_artifacts)
-    _log("Entries discarded because Fpg and Jpg magnitudes weren't available for neighbors:", count_missing_gscmag)
+#    _log("Entries discarded because of 2MASS artifacts: ", count_2mass_artifacts)
+    _log("Entries discarded because magnitudes weren't available for neighbors:", count_missing_gscmag)
     _log("Entries discarded because can't approximate K mag (input out of range):", count_cant_interpolate)
     _log("Entries discarded because approximate K mag (from Jpg - Fpg color) too bright:", count_approx_k_too_bright)
+    _log("Number of K mag estimates from I_N:", count_K_est_from_NpgMag)
+    _log("Number of K mag estimates from R_F:", count_K_est_from_FpgMag)
+    _log("Number of K mag estimates from B_J:", count_K_est_from_JpgMag)
+    _log("Number of K mag estimates from B_J - R_F:", count_K_est_from_JpgMag_minus_FpgMag)
     return output_list_path, len(output_list)
 
 def find_neighbors(base_list_path, delta_k, radius_arcmin):
