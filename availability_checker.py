@@ -9,6 +9,7 @@ import datetime
 import os.path
 from astropy.io import ascii
 import ephem
+import pdb
 
 def read_commstars(filename):
     """Read in a text table with columns for RA, Dec, J, H, K mag,
@@ -286,6 +287,7 @@ def analyze_catalog(catalog_path, kind='jay'):
         catalog = read_commstars(catalog_path)
     n_days = int(1.5 * 365)
     launch_date = datetime.datetime(2018, 10, 1)  # placeholder
+
     # First light will occur at about 28 days after launch, initiating
     # wavefront sensing and control activities to align the mirror segments.
     # Instrument checkout will start 37 days after launch, well before the
@@ -309,7 +311,7 @@ def analyze_catalog(catalog_path, kind='jay'):
         (3,2), (2, 0),
         colspan=2, rowspan=1
     )
-    
+
 
     def update_for_day(frame_num):
         # current_date = commissioning_begins + datetime.timedelta(days=frame_num)
@@ -328,11 +330,14 @@ def analyze_catalog(catalog_path, kind='jay'):
     psf_ani = animation.FuncAnimation(fig, update_for_day, n_days,
                                       interval=100, blit=True)
     psf_ani.save(
-        '{}.gif'.format(catalog_name),
-        writer='imagemagick'
+        '{}.mp4'.format(catalog_name),
+        writer='ffmpeg', bitrate=2000
+#        '{}.gif'.format(catalog_name),
+#        writer='imagemagick'
     )
 
 
 if __name__ == "__main__":
     import sys
-    analyze_catalog(sys.argv[-1])
+    analyze_catalog(sys.argv[-1],'not')
+#    analyze_catalog(sys.argv[-1])
