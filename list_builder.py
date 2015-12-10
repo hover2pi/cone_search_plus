@@ -5,6 +5,7 @@ import os
 import datetime
 import multiprocessing
 import subprocess
+import pdb
 import shutil
 import numpy as np
 import requests
@@ -27,6 +28,7 @@ PRETEND = False
 CVZ_ONLY = False
 # Number of workers (32 for telserv1)
 N_PROCESSES = 32
+#N_PROCESSES = 1
 # Number of star entries per chunk of list (chunks are inputs to cone
 # searches)
 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
@@ -316,22 +318,50 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
         # neighbors will be those stars without KMag (because if they had KMags, they'd be in 2MASS)
         neighbors = table[table['KMag'] == 99.99]
         # find any non-99 kmag values. there should not be any, if the query_2mass tool worked right
+        # NTZ: GSC neighbors with defined K mag are fine as long as they are fainter than the isolation spec;
+        #      consistency with query_2mass is easily checked with one extra comparison step.
         if len(table[(table['KMag'] != 99.99) & (table['class'] == 0)]) != 1:
-            # found a 2MASS neighbor that wasn't found in the query_2mass step
-            # it's safest to just discard this star; we don't need to transform
-            # GSC magnitudes to KMag or anything
-            count_2mass_artifacts += 1
-            continue
+            brightest_neighb_Kmag = np.sort(table['KMag'])[1]
+            if brightest_neighb_Kmag < (row['K'] + delta_k):
+                # found a 2MASS neighbor that wasn't found in the query_2mass step
+                # it's safest to just discard this star; we don't need to transform
+                # GSC magnitudes to KMag or anything
+                count_2mass_artifacts += 1
+                _log("conflicting 2MASS neighbor(s):")
+                _log("query_url: ", query_url)
+                continue
         if len(neighbors) == 0:
             # if no neighbors at *all*, go right to appending to output list
             output_list.add_row(row)
             count_zero_neighbors += 1
             continue
         if np.any(neighbors['FpgMag'] == 99.99) or np.any(neighbors['JpgMag'] == 99.99):
-            # can't compute transformed magnitudes for one or more neighbors
-            # so we must discard this star
-            count_missing_gscmag += 1
-            continue
+            # can't immediately compute transformed magnitudes for one or more neighbors
+            F_miss = ( neighbors['FpgMag'] == 99.99 )
+            J_miss = ( neighbors['JpgMag'] == 99.99 )
+            N_miss = ( neighbors['NpgMag'] == 99.99 )
+            #if np.any(neighbors['FpgMag'] == 99.99 and neighbors['JpgMag'] == 99.99):
+            if np.any(F_miss & J_miss & N_miss):
+                # Discard if a neighbor lacks F, J, and N mags
+                count_missing_gscmag += 1
+                _log("A neighbor missing F, J, N mags:")
+                _log("query_url: ", query_url)
+                continue
+            elif np.any(F_miss & J_miss):
+            else:
+                # Assume a pessimistic (red) J - F color of 2.5, then
+                # convert to K mag in accordance with Anderson 2009,
+                # with J - K = 7.0
+                J_miss_rows = np.where( J_miss.data )
+                for mr in J_miss_rows[0]:
+                    neighbors['JpgMag'][mr] = neighbors['FpgMag'][mr] + 2.5
+                k_approx = neighbors['JpgMag'] - 7.0
+                neighbor_delta_ks = np.abs(k_approx - row['K'])
+                if np.any(neighbor_delta_ks >= delta_k):
+                    count_approx_k_too_bright += 1
+                    continue
+                else:
+                    output_list.add_row(row)
         else:
             # interpolate a K mag using color relation in Anderson 2009
             try:
@@ -352,8 +382,8 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
     output_list.write(output_list_path, format='ascii.no_header')
     _log("Kept", len(output_list), "of", len(base_list))
     _log("Entries kept because zero neighbors were found:", count_zero_neighbors)
-    _log("Entries discrarded because of 2MASS artifacts: ", count_2mass_artifacts)
-    _log("Entries discarded because Fpg or Jpg magnitudes weren't available for neighbors:", count_missing_gscmag)
+    _log("Entries discarded because of 2MASS artifacts: ", count_2mass_artifacts)
+    _log("Entries discarded because Fpg and Jpg magnitudes weren't available for neighbors:", count_missing_gscmag)
     _log("Entries discarded because can't approximate K mag (input out of range):", count_cant_interpolate)
     _log("Entries discarded because approximate K mag (from Jpg - Fpg color) too bright:", count_approx_k_too_bright)
     return output_list_path, len(output_list)
@@ -506,7 +536,8 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 total = 0
                 _log("total = 0 (reassign otherwise)")
                 import code
-                code.interact(local=locals(), global=globals())
+#                code.interact(local=locals(), global=globals())
+                code.interact(local=dict(globals(), **locals()))
             n_stars_kept += total
     else:
         n_stars_kept = 0
@@ -578,10 +609,11 @@ def compute_list(name, spec):
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
     _log(msg)
     _report(msg)
-    base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
-    msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
-    _log(msg)
-    _report(msg)
+    if name != 'initial_image_mosaic':
+        base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
+        msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
+        _log(msg)
+        _report(msg)
     neighbor_criteria = spec.get('neighbors', [])
 
     # neighbor criteria are applied iteratively, so base stars pruned by one set of criteria
@@ -590,9 +622,9 @@ def compute_list(name, spec):
     intermediate_list_path = base_list_path
     # If one of the criteria puts us over the 2MASS completeness limit
     # we need to go check GSC-II later:
-    must_check_gsc = False
     if len(neighbor_criteria) > 0:
         for nc in neighbor_criteria:
+            must_check_gsc = False
             if k_max + nc['delta_k'] > TWOMASS_COMPLETENESS_K:
                 warning = "Warning: For {} < K < {} and deltaK < {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
                     k_min, k_max, nc['delta_k'], k_max + nc['delta_k'], TWOMASS_COMPLETENESS_K
@@ -641,13 +673,19 @@ if __name__ == "__main__":
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
 
+    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+
+#    compute_list('routine_maintenance_2009', jay_lists['routine_maintenance_2009'])
+
+#    compute_list('initial_image_mosaic', target_lists['initial_image_mosaic'])
+
     # Without writing a full dependency solver, this should be enough to ensure
     # that target lists sharing the same base mag criteria don't clobber
     # each other when run with multiprocessing
     # early_commissioning, global_alignment - both 4.5-5.5
-    compute_list('early_commissioning', target_lists['early_commissioning'])
+#    compute_list('early_commissioning', target_lists['early_commissioning'])
     # coarse_phasing, fine_phasing_routine_maintenance - both 8.5-9.5
-    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+#    compute_list('coarse_phasing', target_lists['coarse_phasing'])
 
 
     # Now that intermediate lists are in place for those that conflict,
@@ -659,7 +697,7 @@ if __name__ == "__main__":
         # 'mimf_miri': target_lists['mimf_miri'],
     }
 
-    for name, spec in rest_of_the_target_lists.items():
-        compute_list(name, spec)
+#    for name, spec in rest_of_the_target_lists.items():
+#        compute_list(name, spec)
     _pool.close()
     _pool.join()
