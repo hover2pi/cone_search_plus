@@ -38,6 +38,13 @@ jay_lists = {
             {'delta_k': 2, 'r_arcmin': 2.5}
         )
     },
+    'routine_maintenance_2009': {
+        'k_mag': (8.5, 9.5),
+        'neighbors': (
+            {'delta_k': 7, 'r_arcmin': 1.0},
+            {'delta_k': 2, 'r_arcmin': 2.5}
+        )
+    }
 }
 
 # Target specifications as of WFSCOWG May 2015
@@ -46,7 +53,8 @@ target_lists = {
     'initial_image_mosaic': {
         'k_mag': (-5, 5), # there are some really bright stars in K (~ -3), make sure we get them
         'neighbors': (
-            {'delta_k': 5, 'r_arcmin': 30},
+#            {'delta_k': 5, 'r_arcmin': 30},
+            {'delta_k': 5, 'r_arcmin': 45},
             {'delta_k': 0.5, 'r_arcmin': 45},
         ),
     },
