@@ -620,7 +620,7 @@ def compute_list(name, spec):
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
     _log(msg)
     _report(msg)
-    if name != 'initial_image_mosaic':
+    if name.startswith('initial_image_mosaic') == False:
         base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
         msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
         _log(msg)
@@ -684,11 +684,13 @@ if __name__ == "__main__":
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
 
-    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+#    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+#    compute_list('fine_phasing_routine_maintenance', target_lists['fine_phasing_routine_maintenance'])
 
 #    compute_list('routine_maintenance_2009', jay_lists['routine_maintenance_2009'])
 
-#    compute_list('initial_image_mosaic', target_lists['initial_image_mosaic'])
+    compute_list('initial_image_mosaic_R75', target_lists['initial_image_mosaic_R75'])
+    compute_list('initial_image_mosaic_R90', target_lists['initial_image_mosaic_R90'])
 
     # Without writing a full dependency solver, this should be enough to ensure
     # that target lists sharing the same base mag criteria don't clobber
