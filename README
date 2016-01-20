@@ -9,7 +9,8 @@ Outline of steps to make a reduced list of commmissioning target candidates:
     defined in list_specs.py.
     
 2. availability_checker.py
-   Takes one of the target lists produced by list_builder as command argument.
+   Takes one of the target lists produced by list_builder as a command-line 
+   argument.
    Plots the targets on the ecliptic sphere and animates the JWST viewing zone
    over a range of calendar dates. Stores the result as an mpeg or mp4 video.
    Makes a boolean table of availability of each target as a function of
@@ -26,7 +27,7 @@ Outline of steps to make a reduced list of commmissioning target candidates:
     Run availability_checker again, this time with the reduced list from
     sort_targets as a second argument, to generate a new sky plot and viewing
     zone animation for the reduced target subset. The first argument must remain
-    the full list of target candidates from list_builder.
+    the original, full list of target candidates from list_builder.
     
 5. write_gallery.py
     Generate an interactive html gallery of sky survey cutout images of each
