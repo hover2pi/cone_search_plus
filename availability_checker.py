@@ -259,6 +259,49 @@ def plot_sky(sky_ax, availability_ax, frame_num, catalog, sun_instances, availab
     availability_ax.plot(days, star_totals)
     availability_ax.axvline(x=frame_num)
 
+def plot_sky2(sky_ax, availability_ax, frame_num, catalog, reduc_catalog, sun_instances, availability_flags):
+    """Plot the sky in ecliptic coordinates for a given catalog and date"""
+    sky_ax.set_title('Ecliptic Coordinates')
+    sky_ax.grid()
+    scatter_deg(sky_ax, catalog['el'], catalog['eb'], marker='.', alpha=0.5)
+    scatter_deg(sky_ax, reduc_catalog['el'], reduc_catalog['eb'], marker='*', color='gray', edgecolor='gray', alpha=0.5, s=40)
+    # catalog_in_field = catalog[field_of_regard_filter(catalog, sun_ec)]
+    catalog_in_field = reduc_catalog[availability_flags[:, frame_num]]
+    # scatter_deg(sky_ax, catalog_in_field['el'], catalog_in_field['eb'], marker='.', color='red', alpha=0.5)
+    scatter_deg(sky_ax, catalog_in_field['el'], catalog_in_field['eb'], marker='*', color='red', edgecolor='red', s=40)
+
+    sun_ec = sun_instances[frame_num]
+    # plot sun
+    plot_deg(sky_ax, sun_ec.lon / ephem.degree, sun_ec.lat / ephem.degree, markersize=15, marker='o', color='yellow')
+    plot_deg(sky_ax, sun_ec.lon / ephem.degree + 180, 0, markersize=15, marker='o', color='red')
+
+    # add equatorial plane
+    equatorial_plane_l, equatorial_plane_b = equatorial_plane_rad()
+    plot_rad(sky_ax, equatorial_plane_l, equatorial_plane_b, label='Equator', lw=2, alpha=0.5)
+
+    # add galactic plane
+    gal_l, gal_b = galactic_plane_rad()
+    plot_rad(sky_ax, gal_l, gal_b, lw=2, label='Galactic', alpha=0.5)
+    
+    # plot field of regard
+    cl, cb = small_circle_rad(sun_ec.lon, sun_ec.lat, np.deg2rad(sun_angle_from))
+    plot_rad(sky_ax, cl, cb, lw=4, label=u"{}º to {}º from sun".format(sun_angle_from, sun_angle_to), color='orange')
+    cl, cb = small_circle_rad(sun_ec.lon, sun_ec.lat, np.deg2rad(sun_angle_to))
+    plot_rad(sky_ax, cl, cb, lw=4, color='orange')
+    cl, cb = small_circle_rad(sun_ec.lon, sun_ec.lat, np.deg2rad((sun_angle_to + sun_angle_from) / 2.0))
+    plot_rad(sky_ax, cl, cb, lw=4, ls='--', color='orange')
+    # sky_ax.legend()
+    
+    # plot stars available vs. day of year
+    days = np.arange(availability_flags.shape[1])
+    # star_totals = availability_flags.sum(axis=0)
+    #availability_ax.plot(days, star_totals)
+    #availability_ax.imshow(availability_flags, interpolation='nearest', cmap='gray_r', aspect='auto')
+    availability_ax.imshow(availability_flags.astype(float)*0.5, vmax=1, interpolation='nearest', cmap='gray_r', aspect='auto')
+    availability_ax.axvline(x=frame_num)
+    N_stars = availability_flags.shape[0]
+    plt.yticks(np.arange(N_stars), (np.arange(N_stars)+1)[::-1])
+
 def format_date(date_or_datetime):
     return '{}/{:02}/{:02}'.format(date_or_datetime.year, date_or_datetime.month, date_or_datetime.day)
 
@@ -269,22 +312,35 @@ def precompute_availability(catalog, start_date, n_days):
         sun = ephem.Sun()
         date_string = format_date(start_date + datetime.timedelta(i))
         sun.compute(date_string)
-        print(date_string, "Sun RA = ", sun.ra, " Dec = ", sun.dec)
+#        print(date_string, "Sun RA = ", sun.ra, " Dec = ", sun.dec)
         sun_ec = ephem.Ecliptic(sun)
-        print(date_string, "Sun l = ", sun_ec.lon, " b = ", sun_ec.lat)
+#        print(date_string, "Sun l = ", sun_ec.lon, " b = ", sun_ec.lat)
         bitmask = field_of_regard_filter(catalog, sun_ec)
         availability_flags[:,i] = bitmask
         sun_instances.append(sun_ec)
 
     return sun_instances, availability_flags
 
-def analyze_catalog(catalog_path, kind='jay'):
+#def analyze_catalog(catalog_path, kind=None):
+def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay'):
     _, catalog_name = os.path.split(catalog_path)
     catalog_name, _ = os.path.splitext(catalog_name)
     if kind == 'jay':
         catalog = read_jaystars(catalog_path)
     else:
         catalog = read_commstars(catalog_path)
+
+    if reduc_catalog_path is not None:
+        _, reduc_catalog_name = os.path.split(reduc_catalog_path)
+        reduc_catalog_name, _ = os.path.splitext(reduc_catalog_name)
+        if kind == 'jay':
+            reduc_catalog = read_jaystars(reduc_catalog_path)
+        else:
+            reduc_catalog = read_commstars(reduc_catalog_path)
+    else:
+        reduc_catalog = None
+
+#    pdb.set_trace()
     n_days = int(1.5 * 365)
     launch_date = datetime.datetime(2018, 10, 1)  # placeholder
 
@@ -314,7 +370,6 @@ def analyze_catalog(catalog_path, kind='jay'):
         colspan=2, rowspan=1
     )
 
-
     def update_for_day(frame_num):
         # current_date = commissioning_begins + datetime.timedelta(days=frame_num)
         sky_ax.clear()
@@ -334,12 +389,54 @@ def analyze_catalog(catalog_path, kind='jay'):
     psf_ani.save(
         '{}.mp4'.format(catalog_name),
         writer='ffmpeg', bitrate=2000
+#        writer='ffmpeg', bitrate=200
 #        '{}.gif'.format(catalog_name),
 #        writer='imagemagick'
     )
+    plt.clf()
 
+    if reduc_catalog is not None:
+        print(reduc_catalog)
+        suns, availability = precompute_availability(
+            reduc_catalog,
+            commissioning_begins,
+            n_days=n_days
+        )
+        fig2 = plt.figure(figsize=(14, 8))
+        sky_ax = plt.subplot2grid(
+            (3,2), (0, 0),
+            colspan=2, rowspan=2,
+            projection='mollweide'
+        )
+        availability_ax = plt.subplot2grid(
+            (3,2), (2, 0),
+            colspan=2, rowspan=1
+        )
+        def update_for_day2(frame_num):
+            # current_date = commissioning_begins + datetime.timedelta(days=frame_num)
+            sky_ax.clear()
+            availability_ax.clear()
+            plot_sky2(sky_ax, availability_ax, frame_num, catalog, reduc_catalog, suns, availability)
+            availability_ax.set_xlabel('Day since {}'.format(commissioning_begins))
+            availability_ax.set_xlim(0, n_days)
+            # availability_ax.set_ylabel('N targets')
+            sky_ax.set_title('{} ({} + {})'.format(
+                commissioning_begins + datetime.timedelta(frame_num),
+                commissioning_begins,
+                datetime.timedelta(frame_num),
+            ))
+        reduc_psf_ani = animation.FuncAnimation(fig2, update_for_day2, n_days,
+                                                interval=100, blit=True)
+        reduc_psf_ani.save(
+            '{}.mp4'.format(reduc_catalog_name),
+            writer='ffmpeg', bitrate=2000
+        )
+        plt.clf()
 
 if __name__ == "__main__":
     import sys
-    analyze_catalog(sys.argv[-1],'not')
-#    analyze_catalog(sys.argv[-1])
+#    analyze_catalog(sys.argv[-1],'not')
+    if len(sys.argv) == 2:
+        analyze_catalog(sys.argv[1], None, 'not')
+    elif len(sys.argv) > 2:
+        analyze_catalog(sys.argv[1], sys.argv[2], 'not')
