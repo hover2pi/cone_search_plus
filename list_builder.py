@@ -684,13 +684,9 @@ if __name__ == "__main__":
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
 
+    compute_list('initial_image_mosaic_R45', target_lists['initial_image_mosaic_R45'])
 #    compute_list('coarse_phasing', target_lists['coarse_phasing'])
 #    compute_list('fine_phasing_routine_maintenance', target_lists['fine_phasing_routine_maintenance'])
-
-#    compute_list('routine_maintenance_2009', jay_lists['routine_maintenance_2009'])
-
-    compute_list('initial_image_mosaic_R75', target_lists['initial_image_mosaic_R75'])
-    compute_list('initial_image_mosaic_R90', target_lists['initial_image_mosaic_R90'])
 
     # Without writing a full dependency solver, this should be enough to ensure
     # that target lists sharing the same base mag criteria don't clobber
