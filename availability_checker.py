@@ -1,4 +1,46 @@
 # -*- coding: utf-8 -*-
+
+'''
+SUMMARY
+
+Make an animated sky map of the target candidates, compressed to mpeg/mp4 video.
+The animation illustrates how the viewing zone of JWST evolves over 400 days, 
+and the available targets enter and leave this viewing zone.
+
+USAGE
+
+One command-line argument, second argument optional
+
+1. The target list produced by list_builder.py
+2. (optional) The reduced target list produced by sort_targets.py
+
+EXAMPLES
+
+1. Plot all target candidates found by list_builder, and store the daily
+   availability table in a numpy object:
+
+   python2 availability_checker.py ../target_lists/initial_image_mosaic_R45
+   
+   The animated sky plot of target candidates is stored in
+   initial_image_mosaic_R45.mp4
+   The availability table is stored in
+   initial_image_mosaic_R45_avail.npy
+
+2. Plot all target candidates found by list_builder, store the daily
+   availability table in a numpy object, and make a separate sky animation
+   plot for the reduced target list produced by sort_target.py:
+
+   python2 availability_checker.py ../target_lists/initial_image_mosaic_R45 ../target_lists/initial_image_mosaic_R45_NS_reduc
+   
+   The animated sky plot of target candidates is stored in
+   initial_image_mosaic_R45.mp4
+   The availability table is stored in
+   initial_image_mosaic_R45_avail.npy
+   The animated sky plot of the reduced target candidate list is stored in
+   initial_image_mosaic_R45_NS_reduc.mp4
+
+'''
+
 from __future__ import print_function
 import glob
 import matplotlib
