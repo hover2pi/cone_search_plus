@@ -1,3 +1,20 @@
+'''
+Neil Zimmerman
+January 2016
+
+SUMMARY
+
+Taking a list of 2MASS IDs as an input argument,
+generate an interactive html gallery of sky survey
+cutout images from DSS and 2MASS.
+You can use the 2MASS ID list written by sort_targets.py as the input file.
+
+EXAMPLE USAGE
+
+$ python2 python2 write_gallery.py ../target_lists/initial_image_mosaic_R45_NS_reduc_2MASS
+
+'''
+
 import sys
 from astropy.table import Table
 
