@@ -61,9 +61,14 @@ import glob
 import matplotlib
 from matplotlib import pyplot as plt
 import sys
+import os
 import ephem
 import subprocess
 import requests
+from urllib import urlencode
+import astropy.io.votable
+import astroquery.simbad
+import StringIO
 
 def equatorial_deg_to_ecliptic_deg(ra, dec):
     """Convert RA and declination as decimal degrees to
@@ -72,78 +77,72 @@ def equatorial_deg_to_ecliptic_deg(ra, dec):
     ec = ephem.Ecliptic(eq)
     return ec.lon / ephem.degree, ec.lat / ephem.degree
 
-def make_reduced_table(in_table, daily_min, base_simbad_url, match_radius):
+def get_irsa_2massID(target_row):
+# This is for one object only. For multiple coordinate queries, you need to build a curl command to upload a table.
+    base_irsa_url = "http://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query?outfmt=3&spatial=Cone&radius=1&catalog=fp_psc&objstr="
+    irsa_url = base_irsa_url + "%f+%+f"%(target_row['RA'], target_row['Dec'])
+#    base_irsa_url = "http://irsa.ipac.caltech.edu/SCS?table=fp_psc&SR=0.02&format=votable&"
+#    irsa_url = base_irsa_url + "RA=%f&DEC=%+f"%(target_row['RA'], target_row['Dec'])
+    print irsa_url
+    irsa_result = requests.get(irsa_url)
+    irsa_table = astropy.io.votable.parse_single_table( StringIO.StringIO(irsa_result.text), columns=['designation','k_m'] )
+    twomass_ID = None
+    for irsa_row in irsa_table.array:
+        if irsa_row['k_m']- target_row['K'] <= 0.01:
+            twomass_ID = "2MASS J%s"%(irsa_row['designation'])
+            break
+    if twomass_ID is None:
+        print("WARNING: no IRSA 2MASS PSC hit for RA Dec = %f %f and Kmag = %.2f"%(in_table['RA'][rr],in_table['Dec'][rr],in_table['K'][rr]))
+    return twomass_ID
+
+def make_reduced_table(in_table, daily_min, max_length):
     reduc_status = False
-    twomass_IDs = []
+    customSimbad = astroquery.simbad.Simbad()
+    customSimbad.add_votable_fields('otype(N)')
     N_cand = len(in_table)
+    max_length = np.min([N_cand, max_length])
     rr = 0
     while rr < N_cand:
-        simbadurl = basesimbadurl + "%f"%in_table['RA'][rr]  + "%20" + "%f"%in_table['Dec'][rr] + "%20radius=" + "%ds"%matchradius
-        f = requests.get(simbadurl)
-        queryout = f.text
-        splitlines = queryout.split('\n')
-        targetline = False
-        for ll, line in enumerate(splitlines):
-            if '2MASS J' in line and ( np.abs( float(line.split('|')[2]) - in_table['K'][rr] ) <= 0.01 or \
-                                       in_table['qual'][rr][2] >= 'C' ):
-                targetline = line
-                break
-            if ll == len(splitlines)-1:
-                print("WARNING: no SIMBAD match for RA Dec = %f %f and Kmag = %.2f in %d arcsec cone"%(in_table['RA'][rr],in_table['Dec'][rr],in_table['K'][rr],matchradius))
-        if targetline:
-            otype = targetline.split('|')[1]
-            names = targetline.split('|')[0]
-            simbadKmag = float(targetline.split('|')[2])
-            splitnames = names.split(',')
-            N_names = len(splitnames)
-            for name in splitnames:
-                if '2MASS' in name: twomass_name = name
-                elif 'HD' in name: hd_name = name
-                elif 'HIP' in name: hip_name = name
-                elif 'GSC' in name: gsc_name = name
-            if '**' not in otype:
+        simbad_result = customSimbad.query_object(in_table['2MASS'][rr])
+        if simbad_result is not None:
+            otype_part2 = int(simbad_result['OTYPE_N'][0].split('.')[1])
+            if otype_part2 != 13:
                 reduc_table = Table(in_table[rr])
-                twomass_IDs.append(twomass_name)
                 rr = rr + 1
                 break
             else:
-                print 'Rejecting %s %s from all-latitude reduced list due to double star classification in SIMBAD'%(names,otype)
+                print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%(in_table['2MASS'][rr], simbad_result['OTYPE_N'][0])
+        else:
+            reduc_table = Table(in_table[rr])
+            rr = rr + 1
+            break
         rr = rr + 1
-    while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand:
-        simbadurl = basesimbadurl + "%f"%in_table['RA'][rr]  + "%20" + "%f"%in_table['Dec'][rr] + "%20radius=" + "%ds"%matchradius
-        f = requests.get(simbadurl)
-        queryout = f.text
-        splitlines = queryout.split('\n')
-        targetline = False
-        for ll, line in enumerate(splitlines):
-            if '2MASS J' in line and ( np.abs( float(line.split('|')[2]) - in_table['K'][rr] ) <= 0.01 or \
-                                       in_table['qual'][rr][2] >= 'C' ):
-                targetline = line
-                break
-            if ll == len(splitlines)-1:
-                print("WARNING: no SIMBAD match for RA Dec = %f %f and Kmag = %.2f in %d arcsec cone"%(in_table['RA'][rr],in_table['Dec'][rr],in_table['K'][rr],matchradius))
-        if targetline:
-            otype = targetline.split('|')[1]
-            names = targetline.split('|')[0]
-            simbadKmag = float(targetline.split('|')[2])
-            splitnames = names.split(',')
-            N_names = len(splitnames)
-            for name in splitnames:
-                if '2MASS' in name: twomass_name = name
-                elif 'HD' in name: hd_name = name
-                elif 'HIP' in name: hip_name = name
-                elif 'GSC' in name: gsc_name = name
-            if '**' not in otype:
-                reduc_table.add_row(in_table[rr])
-                twomass_IDs.append(twomass_name)
-            else:
-                print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(names,otype)
-        rr = rr + 1
-    if rr == N_cand:
-        print('WARNING: Could not reduce the target list to satisfy %d min targets per day. Will not store the attempt.' % daily_min) 
+    try:
+        reduc_table
+    except NameError:
+        print('    WARNING: No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
     else:
-        twomass_col = Table.Column(twomass_IDs, '2MASS')
-        reduc_table.add_column(twomass_col)
+        while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
+            simbad_result = customSimbad.query_object(in_table['2MASS'][rr])
+            if simbad_result is not None:
+                #print simbad_result['MAIN_ID','OTYPE_N']
+                otype_part2 = int(simbad_result['OTYPE_N'][0].split('.')[1])
+                if otype_part2 != 13:
+                    reduc_table.add_row(in_table[rr])
+                else:
+                    print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%(in_table['2MASS'][rr], simbad_result['OTYPE_N'][0])
+            else:
+                reduc_table.add_row(in_table[rr])
+            rr = rr + 1
+        if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
+            print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
+            if len(reduc_table) < max_length:
+                print('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
+                      (N_cand, max_length, len(reduc_table)))
+            elif np.sum(reduc_table['avail'],axis=0).min() < daily_min and len(reduc_table) == max_length:
+                print('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
+        else:
+            print('    Reduction was successful.')
         reduc_table.sort(keys='eb')
         reduc_table.reverse()
         reduc_status = True
@@ -153,7 +152,8 @@ targets_fname = sys.argv[-2]
 avail_fname = sys.argv[-1]
 
 min_targets_per_day = 2
-min_targets_per_day_hemi = 1
+min_targets_per_day_hemi = 2
+max_reduc_length = 5
 
 avail = np.load(avail_fname)
 avail_1yr = avail[:,:365]
@@ -169,8 +169,40 @@ for row in targets:
     l, b = equatorial_deg_to_ecliptic_deg(row['RA'], row['Dec'])
     el.append(l)
     eb.append(b)
+
+twomass_IDs = []
+print("Retrieving 2MASS Point Source Catalog IDs from IPAC IRSA...")
+irsa_query_vot = astropy.io.votable.tree.VOTableFile()
+resource = astropy.io.votable.tree.Resource()
+irsa_query_vot.resources.append(resource)
+table = astropy.io.votable.tree.Table(irsa_query_vot)
+resource.tables.append(table)
+table.fields.extend([
+        astropy.io.votable.tree.Field(irsa_query_vot, name="ra", datatype="double", arraysize="*"),
+        astropy.io.votable.tree.Field(irsa_query_vot, name="dec", datatype="double", arraysize="*")])
+table.create_arrays(N_targets_full)
+for rr, row in enumerate(targets):
+    table.array[rr] = (row['RA'], row['Dec']) 
+
+#irsa_query_vot_fname = "irsa_query.xml"
+irsa_query_vot_fname = os.path.join(os.getcwd(), "irsa_query.xml")
+irsa_query_vot.to_xml(irsa_query_vot_fname)
+irsa_response_vot_fname = os.path.join(os.getcwd(), "irsa_response.xml")
+
+irsa_search_rad = 1./3600 # in degree units
+curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad)
+print curl_cmd
+subprocess.call(curl_cmd, shell=True)
+
+irsa_response_vot = astropy.io.votable.parse_single_table( irsa_response_vot_fname, columns=['designation'] )
+assert( len(irsa_response_vot.array.data) == N_targets_full )
+for rr, row in enumerate(targets):
+    irsa_ID = "2MASS J%s"%(irsa_response_vot.array.data['designation'][rr])
+    twomass_IDs.append(irsa_ID)
+
 el_col = Table.Column(el, 'el')
 eb_col = Table.Column(eb, 'eb')
+twomass_col = Table.Column(twomass_IDs, '2MASS')
 avail_col = Table.Column(avail_1yr, 'avail')
 N_days_per_target = np.sum(avail_1yr, axis=1)
 N_days_col = Table.Column(N_days_per_target, 'N_days')
@@ -178,17 +210,54 @@ targets.add_column(el_col, index=2)
 targets.add_column(eb_col, index=3)
 targets.add_column(avail_col) 
 targets.add_column(N_days_col)
+targets.add_column(twomass_col, index=0)
 
 targets_eN = targets[targets['eb'] >= 0]
 targets_eS = targets[targets['eb'] < 0]
 N_targets_eN = len(targets_eN)
 N_targets_eS = len(targets_eS)
 
+dens_el_eS = [] # number of stars within a range of ecliptic longitudes
+sort_metric_eS = []
+for row in targets_eS:
+    hw = 15.
+    el_upper = (row['el'] + hw) % 360
+    el_lower = (row['el'] - hw) % 360
+    if el_upper > el_lower:
+        N_el_neighbs = len(targets_eS[ np.all([[el_lower < targets_eS['el']],[targets_eS['el'] < el_upper]],axis=0).ravel() ])
+    else:
+        N_el_neighbs = len(targets_eS[ np.any([[el_lower < targets_eS['el']],[targets_eS['el'] < el_upper]],axis=0).ravel() ])
+    dens_el_eS.append(N_el_neighbs)
+    sort_metric_eS.append(row['N_days']/N_el_neighbs**(0.05))
+el_dens_eS_col = Table.Column(dens_el_eS, 'el_dens')
+sort_metric_eS_col = Table.Column(sort_metric_eS, 'sort_metric')
+targets_eS.add_column(el_dens_eS_col)
+targets_eS.add_column(sort_metric_eS_col)
+
+dens_el_eN = [] # number of stars within a range of ecliptic longitudes
+sort_metric_eN = []
+for row in targets_eN:
+    hw = 15.
+    el_upper = (row['el'] + hw) % 360
+    el_lower = (row['el'] - hw) % 360
+    if el_upper > el_lower:
+        N_el_neighbs = len(targets_eN[ np.all([[el_lower < targets_eN['el']],[targets_eN['el'] < el_upper]],axis=0).ravel() ])
+    else:
+        N_el_neighbs = len(targets_eN[ np.any([[el_lower < targets_eN['el']],[targets_eN['el'] < el_upper]],axis=0).ravel() ])
+    dens_el_eN.append(N_el_neighbs)
+    sort_metric_eN.append(row['N_days']/N_el_neighbs**(0.05))
+el_dens_eN_col = Table.Column(dens_el_eN, 'el_dens')
+sort_metric_eN_col = Table.Column(sort_metric_eN, 'sort_metric')
+targets_eN.add_column(el_dens_eN_col)
+targets_eN.add_column(sort_metric_eN_col)
+
 targets.sort(keys='N_days')
 targets.reverse()
-targets_eN.sort(keys='N_days')
+#targets_eN.sort(keys='N_days')
+targets_eN.sort(keys='sort_metric')
 targets_eN.reverse()
-targets_eS.sort(keys='N_days')
+#targets_eS.sort(keys='N_days')
+targets_eS.sort(keys='sort_metric')
 targets_eS.reverse()
 
 total_avail_all = np.sum(avail_1yr, axis=0)
@@ -201,18 +270,21 @@ print("On any day of the year, at least %d targets are available at all ecliptic
 print("On any day of the year, at least %d targets are available in the northern ecliptic hemisphere." % min_avail_eN)
 print("On any day of the year, at least %d targets are available in the southern ecliptic hemisphere." % min_avail_eS)
 
-#basesimbadurl = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
-basesimbadurl = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
-basesimbadurl = basesimbadurl + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
-basesimbadurl = basesimbadurl + "%0Aoutput%20console=off%20script=off%0Aquery%20coo%20"
-matchradius = 2
+base_simbad_url = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
+#base_simbad_url = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
+
+#base_simbad_url = base_simbad_url + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
+#base_simbad_url = base_simbad_url + "%0Aoutput%20console=off%20script=off%0Aquery%20id%20"
+
+#base_simbad_url = base_simbad_url + "%0Aoutput%20console=off%20script=off%0Aquery%20coo%20"
+#simbad_match_rad = 5
 
 print('Reducing all-latitude list...')
-reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, basesimbadurl, matchradius)
+reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, max_reduc_length)
 print('Reducing northern latitude list...')
-reduc_targets_eN, reduc_status_eN = make_reduced_table(targets_eN, min_targets_per_day_hemi, basesimbadurl, matchradius)
+reduc_targets_eN, reduc_status_eN = make_reduced_table(targets_eN, min_targets_per_day_hemi, max_reduc_length)
 print('Reducing southern latitude list...')
-reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_per_day_hemi, basesimbadurl, matchradius)
+reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_per_day_hemi, max_reduc_length)
 
 if reduc_status:
     print('\nReduced list, all latitudes (%d stars for min daily avail. %d stars)'%(len(reduc_targets),min_targets_per_day))
