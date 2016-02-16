@@ -79,24 +79,6 @@ def equatorial_deg_to_ecliptic_deg(ra, dec):
     ec = ephem.Ecliptic(eq)
     return ec.lon / ephem.degree, ec.lat / ephem.degree
 
-def get_irsa_2massID(target_row):
-# This is for one object only. For multiple coordinate queries, you need to build a curl command to upload a table.
-    base_irsa_url = "http://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query?outfmt=3&spatial=Cone&radius=1&catalog=fp_psc&objstr="
-    irsa_url = base_irsa_url + "%f+%+f"%(target_row['RA'], target_row['Dec'])
-#    base_irsa_url = "http://irsa.ipac.caltech.edu/SCS?table=fp_psc&SR=0.02&format=votable&"
-#    irsa_url = base_irsa_url + "RA=%f&DEC=%+f"%(target_row['RA'], target_row['Dec'])
-    print irsa_url
-    irsa_result = requests.get(irsa_url)
-    irsa_table = astropy.io.votable.parse_single_table( StringIO.StringIO(irsa_result.text), columns=['designation','k_m'] )
-    twomass_ID = None
-    for irsa_row in irsa_table.array:
-        if irsa_row['k_m']- target_row['K'] <= 0.01:
-            twomass_ID = "2MASS J%s"%(irsa_row['designation'])
-            break
-    if twomass_ID is None:
-        print("WARNING: no IRSA 2MASS PSC hit for RA Dec = %f %f and Kmag = %.2f"%(in_table['RA'][rr],in_table['Dec'][rr],in_table['K'][rr]))
-    return twomass_ID
-
 def best_rand_subset(targets, daily_min, N_subset, N_tries, elat_weight_pow):
     reduc_status = False
     N_cand = len(targets)
@@ -207,8 +189,9 @@ min_targets_per_day = 2
 min_targets_per_day_hemi = 2
 max_reduc_length = 5
 max_reduc_length_hemi = 5
-N_rand_samp = int(5e6)
+N_rand_samp = int(2e5)
 elat_weight_pow = 1.5
+N_proc = 6
 
 avail = np.load(avail_fname)
 avail_1yr = avail[:,:365]
@@ -343,15 +326,6 @@ print("On any day of the year, at least %d targets are available at all ecliptic
 print("On any day of the year, at least %d targets are available in the northern ecliptic hemisphere." % min_avail_eN)
 print("On any day of the year, at least %d targets are available in the southern ecliptic hemisphere." % min_avail_eS)
 
-base_simbad_url = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
-#base_simbad_url = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
-
-#base_simbad_url = base_simbad_url + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
-#base_simbad_url = base_simbad_url + "%0Aoutput%20console=off%20script=off%0Aquery%20id%20"
-
-#base_simbad_url = base_simbad_url + "%0Aoutput%20console=off%20script=off%0Aquery%20coo%20"
-#simbad_match_rad = 5
-
 print('Reducing all-latitude list...')
 reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, max_reduc_length)
 print('Reducing northern latitude list...')
@@ -362,31 +336,30 @@ print('Number of gap days in Jan reduced southern list = %d'%(np.where( np.sum(r
 print('Number of underfill days in Jan reduced southern list = %d'%(np.where( np.sum(reduc_targets_eS['avail'], axis=0) < min_targets_per_day_hemi )[0].shape[0]))
 
 print('Searching for best subset of %d stars for southern latitude list...'%max_reduc_length_hemi)
-#best_reduc_targets_eS, best_N_gaps, best_N_under, best_sum_avail = best_rand_subset(targets_eS, min_targets_per_day_hemi,\
-#                                                                                    max_reduc_length_hemi, N_rand_samp, elat_weight_pow)
-#reduc_targets_eS = best_reduc_targets_eS
 
-# try multiprocessor version
-global_N_gaps = multiprocessing.Value('I', 365)
-global_N_under = multiprocessing.Value('I', 365)
-global_sum_avail = multiprocessing.Value('L', 0)
-global_subset_ind = multiprocessing.Array('i', max_reduc_length_hemi)
-max_N_proc = multiprocessing.cpu_count()
-#N_proc = max_N_proc / 2
-N_proc = 6
-job_list = [ multiprocessing.Process( target=best_rand_subset_mp,\
-                                      args=(targets_eS, min_targets_per_day_hemi, max_reduc_length_hemi,\
-                                            N_rand_samp, elat_weight_pow, global_N_gaps, global_N_under,\
-                                            global_sum_avail, global_subset_ind) ) for j in range(N_proc) ]
-for j in job_list:
-    j.start()
-for j in job_list:
-    j.join()
-
-best_reduc_targets_eS_mp = targets_eS[global_subset_ind[:]]
-best_reduc_targets_eS_mp.sort(keys='eb')
-best_reduc_targets_eS_mp.reverse()
-reduc_targets_eS = best_reduc_targets_eS_mp
+if N_proc > 1:
+    global_N_gaps = multiprocessing.Value('I', 365)
+    global_N_under = multiprocessing.Value('I', 365)
+    global_sum_avail = multiprocessing.Value('L', 0)
+    global_subset_ind = multiprocessing.Array('i', max_reduc_length_hemi)
+    # max_N_proc = multiprocessing.cpu_count()
+    job_list = [ multiprocessing.Process( target=best_rand_subset_mp,\
+                                          args=(targets_eS, min_targets_per_day_hemi, max_reduc_length_hemi,\
+                                                N_rand_samp, elat_weight_pow, global_N_gaps, global_N_under,\
+                                                global_sum_avail, global_subset_ind) ) for j in range(N_proc) ]
+    for j in job_list:
+        j.start()
+    for j in job_list:
+        j.join()
+    
+    best_reduc_targets_eS_mp = targets_eS[global_subset_ind[:]]
+    best_reduc_targets_eS_mp.sort(keys='eb')
+    best_reduc_targets_eS_mp.reverse()
+    reduc_targets_eS = best_reduc_targets_eS_mp
+else:
+    best_reduc_targets_eS, best_N_gaps, best_N_under, best_sum_avail = best_rand_subset(targets_eS, min_targets_per_day_hemi,\
+                                                                                        max_reduc_length_hemi, N_rand_samp, elat_weight_pow)
+    reduc_targets_eS = best_reduc_targets_eS
 
 if reduc_status:
     print('\nReduced list, all latitudes (%d stars for min daily avail. %d stars)'%(len(reduc_targets),min_targets_per_day))
