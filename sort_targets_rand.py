@@ -56,6 +56,7 @@ python2 sort_targets.py ../target_lists/initial_image_mosaic_R45 ../initial_imag
 '''
 
 import numpy as np
+import scipy.misc
 from astropy.table import Table, vstack
 import glob
 import matplotlib
@@ -189,7 +190,7 @@ min_targets_per_day = 2
 min_targets_per_day_hemi = 2
 max_reduc_length = 5
 max_reduc_length_hemi = 5
-N_rand_samp = int(1e7)
+N_rand_samp = long(5e7)
 elat_weight_pow = 1.5
 N_proc = 30
 
@@ -335,7 +336,8 @@ reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_p
 print('Number of gap days in Jan reduced southern list = %d'%(np.where( np.sum(reduc_targets_eS['avail'], axis=0) == 0 )[0].shape[0]))
 print('Number of underfill days in Jan reduced southern list = %d'%(np.where( np.sum(reduc_targets_eS['avail'], axis=0) < min_targets_per_day_hemi )[0].shape[0]))
 
-print('Searching for best subset of %d stars for southern latitude list...'%max_reduc_length_hemi)
+print('Searching for best subset of {} stars for southern latitude list, among \"{} choose {}\" = {} possible combinations'.format(max_reduc_length_hemi, \
+      len(targets_eS), max_reduc_length_hemi, scipy.misc.comb(len(targets_eS), max_reduc_length_hemi, exact=True)))
 
 if N_proc > 1:
     global_N_gaps = multiprocessing.Value('I', 365)
