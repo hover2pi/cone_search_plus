@@ -189,9 +189,9 @@ min_targets_per_day = 2
 min_targets_per_day_hemi = 2
 max_reduc_length = 5
 max_reduc_length_hemi = 5
-N_rand_samp = int(1e6)
+N_rand_samp = int(1e7)
 elat_weight_pow = 1.5
-N_proc = 16
+N_proc = 30
 
 avail = np.load(avail_fname)
 avail_1yr = avail[:,:365]
