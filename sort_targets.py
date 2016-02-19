@@ -152,8 +152,9 @@ targets_fname = sys.argv[-2]
 avail_fname = sys.argv[-1]
 
 min_targets_per_day = 2
-min_targets_per_day_hemi = 2
+min_targets_per_day_hemi = 1
 max_reduc_length = 5
+use_sort_metric = False
 
 avail = np.load(avail_fname)
 avail_1yr = avail[:,:365]
@@ -253,11 +254,13 @@ targets_eN.add_column(sort_metric_eN_col)
 
 targets.sort(keys='N_days')
 targets.reverse()
-#targets_eN.sort(keys='N_days')
-targets_eN.sort(keys='sort_metric')
+if use_sort_metric:
+    targets_eN.sort(keys='sort_metric')
+    targets_eS.sort(keys='sort_metric')
+else:
+    targets_eN.sort(keys='N_days')
+    targets_eS.sort(keys='N_days')
 targets_eN.reverse()
-#targets_eS.sort(keys='N_days')
-targets_eS.sort(keys='sort_metric')
 targets_eS.reverse()
 
 total_avail_all = np.sum(avail_1yr, axis=0)
