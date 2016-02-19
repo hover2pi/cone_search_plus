@@ -306,11 +306,11 @@ def plot_sky2(sky_ax, availability_ax, frame_num, catalog, reduc_catalog, sun_in
     sky_ax.set_title('Ecliptic Coordinates')
     sky_ax.grid()
     scatter_deg(sky_ax, catalog['el'], catalog['eb'], marker='.', alpha=0.5)
-    scatter_deg(sky_ax, reduc_catalog['el'], reduc_catalog['eb'], marker='*', color='gray', edgecolor='gray', alpha=0.5, s=40)
+    scatter_deg(sky_ax, reduc_catalog['el'], reduc_catalog['eb'], marker='*', color='gray', edgecolor='gray', alpha=0.5, s=60)
     # catalog_in_field = catalog[field_of_regard_filter(catalog, sun_ec)]
     catalog_in_field = reduc_catalog[availability_flags[:, frame_num]]
     # scatter_deg(sky_ax, catalog_in_field['el'], catalog_in_field['eb'], marker='.', color='red', alpha=0.5)
-    scatter_deg(sky_ax, catalog_in_field['el'], catalog_in_field['eb'], marker='*', color='red', edgecolor='red', s=40)
+    scatter_deg(sky_ax, catalog_in_field['el'], catalog_in_field['eb'], marker='*', color='red', edgecolor='red', s=60)
 
     sun_ec = sun_instances[frame_num]
     # plot sun
