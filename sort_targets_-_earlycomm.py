@@ -117,11 +117,12 @@ def make_reduced_table_oldquerystyle(in_table, daily_min, max_length):
         splitlines = queryout.split('\n')
         targetline = False
         for ll, line in enumerate(splitlines):
-            if '2MASS J' in line:
+            if '*' in line:
                 targetline = line
                 break
-            if ll == len(splitlines)-1:
+            elif 'not found' in line:
                 print("WARNING: no SIMBAD match for %s"%(in_table['2MASS'][rr]))
+                break
         if targetline:
             otype = targetline.split('|')[1]
             if '**' not in otype:
@@ -130,6 +131,10 @@ def make_reduced_table_oldquerystyle(in_table, daily_min, max_length):
                 break
             else:
                 print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+        else: # No SIMBAD entry, but assume ok
+            reduc_table = Table(in_table[rr])
+            rr = rr + 1
+            break
         rr = rr + 1
     try:
         reduc_table
@@ -143,17 +148,20 @@ def make_reduced_table_oldquerystyle(in_table, daily_min, max_length):
             splitlines = queryout.split('\n')
             targetline = False
             for ll, line in enumerate(splitlines):
-                if '2MASS J' in line:
+                if '*' in line:
                     targetline = line
                     break
-                if ll == len(splitlines)-1:
-                    print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+                elif 'not found' in line:
+                    print("WARNING: no SIMBAD match for %s"%(in_table['2MASS'][rr]))
+                    break
             if targetline:
                 otype = targetline.split('|')[1]
                 if '**' not in otype:
                     reduc_table.add_row(in_table[rr])
                 else:
                     print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+            else: # No SIMBAD entry, but assume ok
+                reduc_table.add_row(in_table[rr])
             rr = rr + 1
         if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
             print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
@@ -225,9 +233,12 @@ def make_reduced_table(in_table, daily_min, max_length):
 targets_fname = sys.argv[-2]
 avail_fname = sys.argv[-1]
 
-min_targets_per_day = 2
-min_targets_per_day_hemi = 2
-max_reduc_length = 5
+#min_targets_per_day = 2
+#min_targets_per_day_hemi = 2
+#max_reduc_length = 20
+min_targets_per_day = 200
+min_targets_per_day_hemi = 200
+max_reduc_length = 500
 use_sort_metric = False
 
 avail = np.load(avail_fname)
@@ -349,10 +360,10 @@ min_avail_all = total_avail_all.min()
 min_avail_eS = np.sum(targets_eS['avail'],axis=0).min()
 min_avail_eN = np.sum(targets_eN['avail'],axis=0).min()
 
-print("Starting from a list of %d target stars." % N_targets_full)
-print("On any day of the year, at least %d targets are available at all ecliptic latitudes." % min_avail_all)
-print("On any day of the year, at least %d targets are available in the northern ecliptic hemisphere." % min_avail_eN)
-print("On any day of the year, at least %d targets are available in the southern ecliptic hemisphere." % min_avail_eS)
+print("Starting from a list of %d candidate stars." % N_targets_full)
+print("On any day of the year, at least %d candidates are available at all ecliptic latitudes." % min_avail_all)
+print("On any day of the year, at least %d candidates are available in the northern ecliptic hemisphere." % min_avail_eN)
+print("On any day of the year, at least %d candidates are available in the southern ecliptic hemisphere." % min_avail_eS)
 
 base_simbad_url = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
 #base_simbad_url = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
@@ -369,6 +380,13 @@ print('Reducing northern latitude list...')
 reduc_targets_eN, reduc_status_eN = make_reduced_table_oldquerystyle(targets_eN, min_targets_per_day_hemi, max_reduc_length)
 print('Reducing southern latitude list...')
 reduc_targets_eS, reduc_status_eS = make_reduced_table_oldquerystyle(targets_eS, min_targets_per_day_hemi, max_reduc_length)
+
+min_avail_reduc_all = np.sum(reduc_targets['avail'],axis=0).min()
+min_avail_reduc_eS = np.sum(reduc_targets_eS['avail'],axis=0).min()
+min_avail_reduc_eN = np.sum(reduc_targets_eN['avail'],axis=0).min()
+print("In the reduced all-latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_all) 
+print("In the reduced northern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eN) 
+print("In the reduced southern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eS) 
 
 if reduc_status:
     print('\nReduced list, all latitudes (%d stars for min daily avail. %d stars)'%(len(reduc_targets),min_targets_per_day))

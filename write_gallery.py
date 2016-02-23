@@ -17,7 +17,10 @@ $ python2 python2 write_gallery.py ../target_lists/initial_image_mosaic_R45_NS_r
 
 import sys
 from astropy.table import Table
+import datetime
+import getpass
 
+now = datetime.datetime.now()
 twomass_list_fname = sys.argv[1]
 twomass_list = Table.read(twomass_list_fname, format='ascii.no_header')
 twomass_IDs = twomass_list['col2']
@@ -66,7 +69,7 @@ html_fobj = open(html_fname, "w")
 html_fobj.write(head)
 #html_fobj.write('Hello, world')
 
-html_fobj.write('Neil Zimmerman, Jan 2016<br>')
+html_fobj.write('Created by {:s} on {:s}<br>'.format(getpass.getuser(), now.strftime("%Y-%m-%d %H:%M")))
 html_fobj.write('Left side: DSS; Right side: 2MASS. Cutout FoV = %d arcmin<br>'%round(FoV*60))
 
 html_fobj.write(title)
