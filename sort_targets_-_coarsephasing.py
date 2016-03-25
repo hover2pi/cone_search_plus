@@ -1,6 +1,6 @@
 '''
 Neil Zimmerman
-February 2016
+January 2016
 
 SUMMARY 
 
@@ -56,14 +56,12 @@ python2 sort_targets.py ../target_lists/initial_image_mosaic_R45 ../initial_imag
 '''
 
 import numpy as np
-import scipy.misc
 from astropy.table import Table, vstack
 import glob
 import matplotlib
 from matplotlib import pyplot as plt
 import sys
 import os
-import multiprocessing
 import ephem
 import subprocess
 import requests
@@ -71,7 +69,6 @@ from urllib import urlencode
 import astropy.io.votable
 import astroquery.simbad
 import StringIO
-import warnings
 
 def equatorial_deg_to_ecliptic_deg(ra, dec):
     """Convert RA and declination as decimal degrees to
@@ -80,119 +77,160 @@ def equatorial_deg_to_ecliptic_deg(ra, dec):
     ec = ephem.Ecliptic(eq)
     return ec.lon / ephem.degree, ec.lat / ephem.degree
 
-def best_rand_subset(targets, daily_min, N_subset, N_tries, elat_weight_pow):
+def get_irsa_2massID(target_row):
+# This is for one object only. For multiple coordinate queries, you need to build a curl command to upload a table.
+    base_irsa_url = "http://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query?outfmt=3&spatial=Cone&radius=1&catalog=fp_psc&objstr="
+    irsa_url = base_irsa_url + "%f+%+f"%(target_row['RA'], target_row['Dec'])
+#    base_irsa_url = "http://irsa.ipac.caltech.edu/SCS?table=fp_psc&SR=0.02&format=votable&"
+#    irsa_url = base_irsa_url + "RA=%f&DEC=%+f"%(target_row['RA'], target_row['Dec'])
+    print irsa_url
+    irsa_result = requests.get(irsa_url)
+    irsa_table = astropy.io.votable.parse_single_table( StringIO.StringIO(irsa_result.text), columns=['designation','k_m'] )
+    twomass_ID = None
+    for irsa_row in irsa_table.array:
+        if irsa_row['k_m']- target_row['K'] <= 0.01:
+            twomass_ID = "2MASS J%s"%(irsa_row['designation'])
+            break
+    if twomass_ID is None:
+        print("WARNING: no IRSA 2MASS PSC hit for RA Dec = %f %f and Kmag = %.2f"%(in_table['RA'][rr],in_table['Dec'][rr],in_table['K'][rr]))
+    return twomass_ID
+
+def make_reduced_table_oldquerystyle(in_table, daily_min, max_length):
+    basesimbadurl = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
+    #basesimbadurl = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
+    basesimbadurl = basesimbadurl + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
+    basesimbadurl = basesimbadurl + "%0Aoutput%20console=off%20script=off%0Aquery%20id%20"
     reduc_status = False
-    N_cand = len(targets)
-    weights = np.power(np.abs(targets['eb'].data), elat_weight_pow)
-    weights = weights / np.sum(weights)
-    best_N_gaps = 365
-    best_N_under = 365
-    best_sum_avail = 0
-    best_subset_ind = None
-    avail_array = targets['avail'].data
-
-    for t in range(N_tries):
-        subset_ind = np.random.choice(N_cand, N_subset, replace=False, p=weights)
-        avail_totals = np.sum(avail_array[subset_ind,:], axis=0)
-        N_gaps = np.where(avail_totals == 0)[0].shape[0]
-        N_under = np.where(avail_totals < daily_min)[0].shape[0]
-        sum_avail = np.sum(avail_totals)
-        if N_gaps < best_N_gaps: # first priority is to reduce the gaps
-            best_subset_ind = subset_ind.copy()
-            best_N_gaps = N_gaps
-            best_N_under = N_under
-            best_sum_avail = sum_avail # note, this specific metric may actually get worse
-            print('Sample #%9d: gap day total %3d, underfill day total %3d, sum avail %5d' % (t+1, best_N_gaps, best_N_under, best_sum_avail))
-        elif (N_under < best_N_under and N_gaps <= best_N_gaps): # second priority
-            best_subset_ind = subset_ind.copy()
-            best_N_gaps = N_gaps
-            best_N_under = N_under
-            best_sum_avail = sum_avail # note, this specific metric may actually get worse
-            print('Sample #%9d: gap day total %3d, underfill day total %3d, sum avail %5d' % (t+1, best_N_gaps, best_N_under, best_sum_avail))
-        elif (sum_avail > best_sum_avail and N_under <= best_N_under and N_gaps <= best_N_gaps): # third priority
-            best_subset_ind = subset_ind.copy()
-            best_N_gaps = N_gaps
-            best_N_under = N_under
-            best_sum_avail = sum_avail
-            print('Sample #%9d: gap day total %3d, underfill day total %3d, sum avail %5d' % (t+1, best_N_gaps, best_N_under, best_sum_avail))
-
-    best_subset = targets[best_subset_ind]
-    best_subset.sort(keys='eb')
-    best_subset.reverse()
-    return best_subset, best_N_gaps, best_N_under, best_sum_avail
-
-def best_rand_subset_mp(targets, daily_min, N_subset, N_tries, elat_weight_pow, best_N_gaps, best_N_under, best_sum_avail, best_subset_ind):
-    proc_name = multiprocessing.current_process().name
-    print proc_name, 'launching'
-    N_cand = len(targets)
-    weights = np.power(np.abs(targets['eb'].data), elat_weight_pow)
-    weights = weights / np.sum(weights)
-    avail_array = targets['avail'].data
-    np.random.seed()
-
-    for t in range(N_tries):
-        subset_ind = np.random.choice(N_cand, N_subset, replace=False, p=weights)
-        avail_totals = np.sum(avail_array[subset_ind,:], axis=0)
-        N_gaps = np.where(avail_totals == 0)[0].shape[0]
-        N_under = np.where(avail_totals < daily_min)[0].shape[0]
-        sum_avail = np.sum(avail_totals)
-        if N_gaps < best_N_gaps.value: # first priority is to reduce the gaps
-            best_subset_ind[:] = subset_ind.copy()
-            best_N_gaps.value = N_gaps
-            best_N_under.value = N_under
-            best_sum_avail.value = sum_avail # note, this specific metric may actually get worse
-            print('%s sample #%9d: gap day total %3d, underfill day total %3d, sum avail %5d' %\
-                  (proc_name, t+1, best_N_gaps.value, best_N_under.value, best_sum_avail.value))
-        elif (N_under < best_N_under.value and N_gaps <= best_N_gaps.value): # second priority
-            best_subset_ind[:] = subset_ind.copy()
-            best_N_gaps.value = N_gaps
-            best_N_under.value = N_under
-            best_sum_avail.value = sum_avail # note, this specific metric may actually get worse
-            print('%s sample #%9d: gap day total %3d, underfill day total %3d, sum avail %5d' %\
-                  (proc_name, t+1, best_N_gaps.value, best_N_under.value, best_sum_avail.value))
-        elif (sum_avail > best_sum_avail and N_under <= best_N_under and N_gaps <= best_N_gaps): # third priority
-            best_subset_ind[:] = subset_ind.copy()
-            best_N_gaps.value = N_gaps
-            best_N_under.value = N_under
-            best_sum_avail.value = sum_avail # note, this specific metric may actually get worse
-            print('%s sample #%9d: gap day total %3d, underfill day total %3d, sum avail %5d' %\
-                  (proc_name, t+1, best_N_gaps.value, best_N_under.value, best_sum_avail.value))
-    print proc_name, 'finished'
+    N_cand = len(in_table)
+    rr = 0
+    while rr < N_cand:
+        #simbadurl = basesimbadurl + "%f"%in_table['RA'][rr]  + "%20" + "%f"%in_table['Dec'][rr] + "%20radius=" + "%ds"%matchradius
+        simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
+        f = requests.get(simbadurl)
+        queryout = f.text
+        splitlines = queryout.split('\n')
+        targetline = False
+        for ll, line in enumerate(splitlines):
+            if '*' in line:
+                targetline = line
+                break
+            elif 'not found' in line:
+                print("WARNING: no SIMBAD match for %s"%(in_table['2MASS'][rr]))
+                break
+        if targetline:
+            otype = targetline.split('|')[1]
+            if '**' not in otype:
+                reduc_table = Table(in_table[rr])
+                rr = rr + 1
+                break
+            else:
+                print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+        else: # No SIMBAD entry, but assume ok
+            reduc_table = Table(in_table[rr])
+            rr = rr + 1
+            break
+        rr = rr + 1
+    try:
+        reduc_table
+    except NameError:
+        print('    WARNING: No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
+    else:
+        while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
+            simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
+            f = requests.get(simbadurl)
+            queryout = f.text
+            splitlines = queryout.split('\n')
+            targetline = False
+            for ll, line in enumerate(splitlines):
+                if '*' in line:
+                    targetline = line
+                    break
+                elif 'not found' in line:
+                    print("WARNING: no SIMBAD match for %s"%(in_table['2MASS'][rr]))
+                    break
+            if targetline:
+                otype = targetline.split('|')[1]
+                if '**' not in otype:
+                    reduc_table.add_row(in_table[rr])
+                else:
+                    print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+            else: # No SIMBAD entry, but assume ok
+                reduc_table.add_row(in_table[rr])
+            rr = rr + 1
+        if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
+            print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
+            if len(reduc_table) < max_length:
+                print('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
+                      (N_cand, max_length, len(reduc_table)))
+            elif np.sum(reduc_table['avail'],axis=0).min() < daily_min and len(reduc_table) == max_length:
+                print('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
+        else:
+            print('    Reduction was successful.')
+        reduc_table.sort(keys='eb')
+        reduc_table.reverse()
+        reduc_status = True
+    return reduc_table, reduc_status
 
 def make_reduced_table(in_table, daily_min, max_length):
     reduc_status = False
+    customSimbad = astroquery.simbad.Simbad()
+    customSimbad.add_votable_fields('otype(N)')
     N_cand = len(in_table)
     max_length = np.min([N_cand, max_length])
-    reduc_table = Table(in_table[0])
-    rr = 1
-    while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
-        reduc_table.add_row(in_table[rr])
+    rr = 0
+    while rr < N_cand:
+        simbad_result = customSimbad.query_object(in_table['2MASS'][rr])
+        if simbad_result is not None:
+            otype_part2 = int(simbad_result['OTYPE_N'][0].split('.')[1])
+            if otype_part2 != 13:
+                reduc_table = Table(in_table[rr])
+                rr = rr + 1
+                break
+            else:
+                print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%(in_table['2MASS'][rr], simbad_result['OTYPE_N'][0])
+        else:
+            reduc_table = Table(in_table[rr])
+            rr = rr + 1
+            break
         rr = rr + 1
-    if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
-        print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
-        if len(reduc_table) < max_length:
-            print('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
-                  (N_cand, max_length, len(reduc_table)))
-        elif np.sum(reduc_table['avail'],axis=0).min() < daily_min and len(reduc_table) == max_length:
-            print('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
-            reduc_status = True
+    try:
+        reduc_table
+    except NameError:
+        print('    WARNING: No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
     else:
-        print('    Reduction was successful.')
+        while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
+            simbad_result = customSimbad.query_object(in_table['2MASS'][rr])
+            if simbad_result is not None:
+                #print simbad_result['MAIN_ID','OTYPE_N']
+                otype_part2 = int(simbad_result['OTYPE_N'][0].split('.')[1])
+                if otype_part2 != 13:
+                    reduc_table.add_row(in_table[rr])
+                else:
+                    print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%(in_table['2MASS'][rr], simbad_result['OTYPE_N'][0])
+            else:
+                reduc_table.add_row(in_table[rr])
+            rr = rr + 1
+        if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
+            print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
+            if len(reduc_table) < max_length:
+                print('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
+                      (N_cand, max_length, len(reduc_table)))
+            elif np.sum(reduc_table['avail'],axis=0).min() < daily_min and len(reduc_table) == max_length:
+                print('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
+        else:
+            print('    Reduction was successful.')
+        reduc_table.sort(keys='eb')
+        reduc_table.reverse()
         reduc_status = True
-    reduc_table.sort(keys='eb')
-    reduc_table.reverse()
     return reduc_table, reduc_status
 
 targets_fname = sys.argv[-2]
 avail_fname = sys.argv[-1]
 
 min_targets_per_day = 2
-min_targets_per_day_hemi = 2
-max_reduc_length = 5
-max_reduc_length_hemi = 5
-N_rand_samp = long(5e7)
-elat_weight_pow = 1.5
-N_proc = 30
+min_targets_per_day_hemi = 1
+max_reduc_length = 50
+use_sort_metric = False
 
 avail = np.load(avail_fname)
 avail_1yr = avail[:,:365]
@@ -250,25 +288,6 @@ targets.add_column(avail_col)
 targets.add_column(N_days_col)
 targets.add_column(twomass_col, index=0)
 
-# Remove stars with multiplicity flags in SIMBAD object types.
-warnings.simplefilter("ignore", UserWarning) # Don't complain about 2MASS stars that lack SIMBAD entries
-
-customSimbad = astroquery.simbad.Simbad()
-customSimbad.add_votable_fields('otype(N)')
-customSimbad.add_votable_fields('id(2MASS)')
-simbad_result = customSimbad.query_objects(targets['2MASS'].data)
-for ss, simbad_row in enumerate(simbad_result):
-    otype_part2 = int(simbad_row['OTYPE_N'].split('.')[1])
-    if otype_part2 != 13:
-        continue
-    else:
-        rr = np.where(targets['2MASS'] == simbad_row['ID_2MASS'])[0][0]
-        print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%\
-              (targets['2MASS'][rr], simbad_row['OTYPE_N'])
-        targets.remove_row(rr)
-
-print('%d candidates remain after removing stars with multiplicity flags.'%(len(targets)))
-
 targets_eN = targets[targets['eb'] >= 0]
 targets_eS = targets[targets['eb'] < 0]
 N_targets_eN = len(targets_eN)
@@ -310,11 +329,13 @@ targets_eN.add_column(sort_metric_eN_col)
 
 targets.sort(keys='N_days')
 targets.reverse()
-#targets_eN.sort(keys='N_days')
-targets_eN.sort(keys='sort_metric')
+if use_sort_metric:
+    targets_eN.sort(keys='sort_metric')
+    targets_eS.sort(keys='sort_metric')
+else:
+    targets_eN.sort(keys='N_days')
+    targets_eS.sort(keys='N_days')
 targets_eN.reverse()
-#targets_eS.sort(keys='N_days')
-targets_eS.sort(keys='sort_metric')
 targets_eS.reverse()
 
 total_avail_all = np.sum(avail_1yr, axis=0)
@@ -322,45 +343,29 @@ min_avail_all = total_avail_all.min()
 min_avail_eS = np.sum(targets_eS['avail'],axis=0).min()
 min_avail_eN = np.sum(targets_eN['avail'],axis=0).min()
 
+print("Starting from a list of %d target stars." % N_targets_full)
 print("On any day of the year, at least %d targets are available at all ecliptic latitudes." % min_avail_all)
 print("On any day of the year, at least %d targets are available in the northern ecliptic hemisphere." % min_avail_eN)
 print("On any day of the year, at least %d targets are available in the southern ecliptic hemisphere." % min_avail_eS)
 
+base_simbad_url = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
+#base_simbad_url = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
+
+#base_simbad_url = base_simbad_url + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
+#base_simbad_url = base_simbad_url + "%0Aoutput%20console=off%20script=off%0Aquery%20id%20"
+
+#base_simbad_url = base_simbad_url + "%0Aoutput%20console=off%20script=off%0Aquery%20coo%20"
+#simbad_match_rad = 5
+
 print('Reducing all-latitude list...')
-reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, max_reduc_length)
+reduc_targets, reduc_status = make_reduced_table_oldquerystyle(targets, min_targets_per_day, max_reduc_length)
+#reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, max_reduc_length)
 print('Reducing northern latitude list...')
-reduc_targets_eN, reduc_status_eN = make_reduced_table(targets_eN, min_targets_per_day_hemi, max_reduc_length_hemi)
+reduc_targets_eN, reduc_status_eN = make_reduced_table_oldquerystyle(targets_eN, min_targets_per_day_hemi, max_reduc_length)
+#reduc_targets_eN, reduc_status_eN = make_reduced_table(targets_eN, min_targets_per_day_hemi, max_reduc_length)
 print('Reducing southern latitude list...')
-reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_per_day_hemi, max_reduc_length_hemi)
-print('Number of gap days in Jan reduced southern list = %d'%(np.where( np.sum(reduc_targets_eS['avail'], axis=0) == 0 )[0].shape[0]))
-print('Number of underfill days in Jan reduced southern list = %d'%(np.where( np.sum(reduc_targets_eS['avail'], axis=0) < min_targets_per_day_hemi )[0].shape[0]))
-
-print('Searching for best subset of {} stars for southern latitude list, among \"{} choose {}\" = {} possible combinations'.format(max_reduc_length_hemi, \
-      len(targets_eS), max_reduc_length_hemi, scipy.misc.comb(len(targets_eS), max_reduc_length_hemi, exact=True)))
-
-if N_proc > 1:
-    global_N_gaps = multiprocessing.Value('I', 365)
-    global_N_under = multiprocessing.Value('I', 365)
-    global_sum_avail = multiprocessing.Value('L', 0)
-    global_subset_ind = multiprocessing.Array('i', max_reduc_length_hemi)
-    # max_N_proc = multiprocessing.cpu_count()
-    job_list = [ multiprocessing.Process( target=best_rand_subset_mp,\
-                                          args=(targets_eS, min_targets_per_day_hemi, max_reduc_length_hemi,\
-                                                N_rand_samp, elat_weight_pow, global_N_gaps, global_N_under,\
-                                                global_sum_avail, global_subset_ind) ) for j in range(N_proc) ]
-    for j in job_list:
-        j.start()
-    for j in job_list:
-        j.join()
-    
-    best_reduc_targets_eS_mp = targets_eS[global_subset_ind[:]]
-    best_reduc_targets_eS_mp.sort(keys='eb')
-    best_reduc_targets_eS_mp.reverse()
-    reduc_targets_eS = best_reduc_targets_eS_mp
-else:
-    best_reduc_targets_eS, best_N_gaps, best_N_under, best_sum_avail = best_rand_subset(targets_eS, min_targets_per_day_hemi,\
-                                                                                        max_reduc_length_hemi, N_rand_samp, elat_weight_pow)
-    reduc_targets_eS = best_reduc_targets_eS
+reduc_targets_eS, reduc_status_eS = make_reduced_table_oldquerystyle(targets_eS, min_targets_per_day_hemi, max_reduc_length)
+#reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_per_day_hemi, max_reduc_length)
 
 if reduc_status:
     print('\nReduced list, all latitudes (%d stars for min daily avail. %d stars)'%(len(reduc_targets),min_targets_per_day))

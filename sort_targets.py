@@ -178,9 +178,8 @@ resource = astropy.io.votable.tree.Resource()
 irsa_query_vot.resources.append(resource)
 table = astropy.io.votable.tree.Table(irsa_query_vot)
 resource.tables.append(table)
-table.fields.extend([
-        astropy.io.votable.tree.Field(irsa_query_vot, name="ra", datatype="double", arraysize="*"),
-        astropy.io.votable.tree.Field(irsa_query_vot, name="dec", datatype="double", arraysize="*")])
+table.fields.extend([ astropy.io.votable.tree.Field(irsa_query_vot, name="ra", datatype="double"),
+                      astropy.io.votable.tree.Field(irsa_query_vot, name="dec", datatype="double") ])
 table.create_arrays(N_targets_full)
 for rr, row in enumerate(targets):
     table.array[rr] = (row['RA'], row['Dec']) 
