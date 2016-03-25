@@ -99,6 +99,12 @@ target_lists = {
             {'delta_k': 5, 'r_arcmin': 4.027},
         )
     },
+    'coarse_phasing_R03': {
+        'k_mag': (8.5, 9.5),
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 3.0},
+        )
+    },
     'fine_phasing_routine_maintenance': {
         'k_mag': (8.5, 9.5),
         'neighbors': (
