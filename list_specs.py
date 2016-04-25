@@ -106,7 +106,7 @@ target_lists = {
         )
     },
     'fine_phasing_routine_maintenance': {
-        'k_mag': (8.5, 9.5),
+        'k_mag': (6.5, 7.5),
         'neighbors': (
             {'delta_k': 7, 'r_arcmin': 0.5,},
         ),
