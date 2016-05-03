@@ -75,6 +75,7 @@ import urllib
 import astropy.io.votable
 import astroquery.simbad
 import StringIO
+import pdb
 
 def equatorial_deg_to_ecliptic_deg(ra, dec):
     """Convert RA and declination as decimal degrees to
@@ -245,6 +246,7 @@ avail = np.load(avail_fname)
 avail_1yr = avail[:,:365]
 
 targets = Table.read(targets_fname, format='ascii', names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'])
+targets.sort(keys='RA')
 N_targets_full = len(targets)
 
 assert N_targets_full == avail.shape[0]
@@ -267,7 +269,7 @@ table.fields.extend([ astropy.io.votable.tree.Field(irsa_query_vot, name="ra", d
                       astropy.io.votable.tree.Field(irsa_query_vot, name="dec", datatype="double") ])
 table.create_arrays(N_targets_full)
 for rr, row in enumerate(targets):
-    table.array[rr] = (row['RA'], row['Dec']) 
+    table.array[rr] = (row['RA'], row['Dec'])
 
 #irsa_query_vot_fname = "irsa_query.xml"
 irsa_query_vot_fname = os.path.join(os.getcwd(), "irsa_query.xml")
@@ -275,12 +277,15 @@ irsa_query_vot.to_xml(irsa_query_vot_fname)
 irsa_response_vot_fname = os.path.join(os.getcwd(), "irsa_response.xml")
 
 irsa_search_rad = 1./3600 # in degree units
-curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad)
+#curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad)
+curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation,fp_psc.ra,fp_psc.dec FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad)
 print curl_cmd
 subprocess.call(curl_cmd, shell=True)
 
-irsa_response_vot = astropy.io.votable.parse_single_table( irsa_response_vot_fname, columns=['designation'] )
+#irsa_response_vot = astropy.io.votable.parse_single_table( irsa_response_vot_fname, columns=['designation'] )
+irsa_response_vot = astropy.io.votable.parse_single_table( irsa_response_vot_fname, columns=['designation','ra','dec'] )
 assert( len(irsa_response_vot.array.data) == N_targets_full )
+irsa_response_vot.array.data.sort(order='ra')
 for rr, row in enumerate(targets):
     irsa_ID = "2MASS J%s"%(irsa_response_vot.array.data['designation'][rr])
     twomass_IDs.append(irsa_ID)
@@ -293,9 +298,11 @@ N_days_per_target = np.sum(avail_1yr, axis=1)
 N_days_col = Table.Column(N_days_per_target, 'N_days')
 targets.add_column(el_col, index=2)
 targets.add_column(eb_col, index=3)
-targets.add_column(avail_col) 
+targets.add_column(avail_col)
 targets.add_column(N_days_col)
 targets.add_column(twomass_col, index=0)
+
+pdb.set_trace()
 
 #black_list = ['2MASS J21093180+6829268']
 black_list = []
@@ -393,15 +400,19 @@ if reduc_status:
     reduc_targets_full = reduc_targets['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
     reduc_targets_RADec = reduc_targets['RA', 'Dec']
     reduc_targets_twomass = reduc_targets['2MASS']
+    reduc_targets_apt = reduc_targets['2MASS', 'RA', 'Dec', 'J', 'H', 'K']
     reduc_targets_RADec.meta = {} 
     reduc_targets_twomass.meta = {} 
+    reduc_targets_apt.meta = {} 
     reduc_targets_fname = targets_fname + '_reduc'
     reduc_targets_RADec_fname = reduc_targets_fname + '_RADec'
     reduc_targets_twomass_fname = reduc_targets_fname + '_2MASS'
+    reduc_targets_apt_fname = reduc_targets_fname + '_apt.csv'
     reduc_targets_full.write(reduc_targets_fname, format='ascii.no_header')
     reduc_targets_RADec.write(reduc_targets_RADec_fname, format='ascii.no_header')
+    reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii.no_header', delimiter=',')
     reduc_targets_twomass.tofile(reduc_targets_twomass_fname,sep="\n")
-    print('Wrote all-latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_fname, reduc_targets_RADec_fname, reduc_targets_twomass_fname))
+    print('Wrote all-latitude reduced target lists to\n%s,\n%s,\n%s,\n%s'%(reduc_targets_fname, reduc_targets_RADec_fname, reduc_targets_twomass_fname, reduc_targets_apt_fname))
 if reduc_status_eN:
     print('\nReduced list, northern latitudes (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eN),min_targets_per_day_hemi))
     print reduc_targets_eN
