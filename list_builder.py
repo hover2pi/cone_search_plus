@@ -26,6 +26,8 @@ from list_specs import target_lists, jay_lists
 PRETEND = False
 # Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
 CVZ_ONLY = False
+NEAR_CVZ_ONLY = True
+NEAR_CVZ_ELAT = 80
 # Number of workers (32 for telserv1)
 N_PROCESSES = 32
 #N_PROCESSES = 1
@@ -204,6 +206,8 @@ def compute_base_list(k_min, k_max):
     base_list_name = 'base_{}_k_{}'.format(k_min_string, k_max_string)
     if CVZ_ONLY:
         base_list_name += "_cvz"
+    elif NEAR_CVZ_ONLY:
+        base_list_name += "_nearcvz"
     base_list_path = join('cache', base_list_name)
     # build args list
     args = [
@@ -215,20 +219,24 @@ def compute_base_list(k_min, k_max):
     if exists(base_list_path):
         _log("{} exists".format(base_list_path))
         return base_list_path, count_non_comment_lines(base_list_path)
-    if not CVZ_ONLY:
-        # call subprocess
-        # write to scratch file
-        run_command(args, output_to=base_list_path)
-    else:
+    if CVZ_ONLY:
         north_args = args + ['EB_MIN={}'.format(85), 'EB_MAX={}'.format(90)]
         north_path = base_list_path + '.north'
         run_command(north_args, output_to=north_path)
-
         south_args = args + ['EB_MAX={}'.format(-85), 'EB_MIN={}'.format(-90)]
         south_path = base_list_path + '.south'
         run_command(south_args, output_to=south_path)
-
         run_command(['cat', north_path, south_path], output_to=base_list_path)
+    elif NEAR_CVZ_ONLY:
+        north_args = args + ['EB_MIN={}'.format(NEAR_CVZ_ELAT), 'EB_MAX={}'.format(90)]
+        north_path = base_list_path + '.north'
+        run_command(north_args, output_to=north_path)
+        south_args = args + ['EB_MAX={}'.format(-NEAR_CVZ_ELAT), 'EB_MIN={}'.format(-90)]
+        south_path = base_list_path + '.south'
+        run_command(south_args, output_to=south_path)
+        run_command(['cat', north_path, south_path], output_to=base_list_path)
+    else:
+        run_command(args, output_to=base_list_path)
 
     return base_list_path, count_non_comment_lines(base_list_path)
 
@@ -684,8 +692,12 @@ if __name__ == "__main__":
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
 
-    compute_list('initial_image_mosaic_R45', target_lists['initial_image_mosaic_R45'])
+    compute_list('global_alignment', target_lists['global_alignment'])
+
+#    compute_list('initial_image_mosaic_R17_fs', target_lists['initial_image_mosaic_R17_fs'])
+
 #    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+
 #    compute_list('fine_phasing_routine_maintenance', target_lists['fine_phasing_routine_maintenance'])
 
     # Without writing a full dependency solver, this should be enough to ensure
