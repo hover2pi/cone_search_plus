@@ -81,6 +81,34 @@ target_lists = {
             {'delta_k': 5, 'r_arcmin': 90},
         ),
     },
+    'initial_image_mosaic_R15_fs': {
+        'k_mag': (4.5, 6.), # there are some really bright stars in K (~ -3), make sure we get them
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 15},
+            {'delta_k': 0.5, 'r_arcmin': 45},
+        ),
+    },
+    'initial_image_mosaic_R17_fs': {
+        'k_mag': (4.5, 6.), # there are some really bright stars in K (~ -3), make sure we get them
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 17},
+            {'delta_k': 0.5, 'r_arcmin': 45},
+        ),
+    },
+    'initial_image_mosaic_R20_fs': {
+        'k_mag': (4.5, 6.), # there are some really bright stars in K (~ -3), make sure we get them
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 20},
+            {'delta_k': 0.5, 'r_arcmin': 45},
+        ),
+    },
+    'initial_image_mosaic_R25_fs': {
+        'k_mag': (4.5, 6.), # there are some really bright stars in K (~ -3), make sure we get them
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 25},
+            {'delta_k': 0.5, 'r_arcmin': 45},
+        ),
+    },
     'early_commissioning': {
         'k_mag': (4.5, 5.5),
         'neighbors': (
