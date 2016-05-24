@@ -673,6 +673,9 @@ def compute_list(name, spec):
     if CVZ_ONLY:
         dest_path = join('target_lists_cvz_only', name)
         _report("CVZ only")
+    if NEAR_CVZ_ONLY:
+        dest_path = join('target_lists_nearcvz_only', name)
+        _report("Near CVZ only (|ecliptic lat| > {:})".format(NEAR_CVZ_ELAT))
     else:
         dest_path = join('target_lists', name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
