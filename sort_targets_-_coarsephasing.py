@@ -65,7 +65,7 @@ import os
 import ephem
 import subprocess
 import requests
-from urllib import urlencode
+import urllib
 import astropy.io.votable
 import astroquery.simbad
 import StringIO
@@ -227,7 +227,7 @@ def make_reduced_table(in_table, daily_min, max_length):
 targets_fname = sys.argv[-2]
 avail_fname = sys.argv[-1]
 
-min_targets_per_day = 2
+min_targets_per_day = 3
 min_targets_per_day_hemi = 1
 max_reduc_length = 50
 use_sort_metric = False
