@@ -29,16 +29,16 @@ CVZ_ONLY = True
 NEAR_CVZ_ONLY = False
 NEAR_CVZ_ELAT = 80
 # Number of workers (32 for telserv1)
-#N_PROCESSES = 32
-N_PROCESSES = 1
+N_PROCESSES = 32
+#N_PROCESSES = 1
 # Number of star entries per chunk of list (chunks are inputs to cone
 # searches)
 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
 CHUNK_SIZE = 1000
 # Switch off multiprocessing for better tracebacks in debugging
-MULTIPROCESS_CHUNKS = False
+MULTIPROCESS_CHUNKS = True
 # Keep intermediate files for debugging
-KEEP_INTERMEDIATES = True
+KEEP_INTERMEDIATES = False
 # This is maybe the wrong way to handle this cutoff, but here's the
 # reasoning. 2MASS is complete to K < 14.3 in "unconfused regions" of
 # the sky. Elsewhere in the 2MASS PSC manual, it says the limits can
