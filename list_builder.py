@@ -25,20 +25,20 @@ from list_specs import target_lists, jay_lists
 # Skip anything that touches the filesystem (for debugging)
 PRETEND = False
 # Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
-CVZ_ONLY = False
-NEAR_CVZ_ONLY = True
+CVZ_ONLY = True
+NEAR_CVZ_ONLY = False
 NEAR_CVZ_ELAT = 80
 # Number of workers (32 for telserv1)
-N_PROCESSES = 32
-#N_PROCESSES = 1
+#N_PROCESSES = 32
+N_PROCESSES = 1
 # Number of star entries per chunk of list (chunks are inputs to cone
 # searches)
 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
 CHUNK_SIZE = 1000
 # Switch off multiprocessing for better tracebacks in debugging
-MULTIPROCESS_CHUNKS = True
+MULTIPROCESS_CHUNKS = False
 # Keep intermediate files for debugging
-KEEP_INTERMEDIATES = False
+KEEP_INTERMEDIATES = True
 # This is maybe the wrong way to handle this cutoff, but here's the
 # reasoning. 2MASS is complete to K < 14.3 in "unconfused regions" of
 # the sky. Elsewhere in the 2MASS PSC manual, it says the limits can
@@ -476,10 +476,10 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
                 for line in open(pruned_chunk_path):
                     output_list.write(line)
     # remove chunk and neighbors for chunk
-    _log("remove {}".format(pruned_chunk_path))
-    _log("remove {}".format(chunk_neighbors_path))
-    _log("remove {}".format(chunk_path))
     if not KEEP_INTERMEDIATES:
+        _log("remove {}".format(pruned_chunk_path))
+        _log("remove {}".format(chunk_neighbors_path))
+        _log("remove {}".format(chunk_path))
         os.remove(pruned_chunk_path)
         os.remove(chunk_neighbors_path)
         os.remove(chunk_path)
@@ -611,6 +611,31 @@ def remove_non_AAA_sources(path):
     n_kept = n_base_stars - n_pruned
     return outpath, n_kept
 
+def fix_idx_col(path):
+    """When we have combined separate (North and South) queries, modify
+    the "idx" identifiers based on Declination so that they are unique:
+    If Dec >= 0, replace 'U' prefix with 'N'; otherwise 'S' """
+    outpath = path + "_idxfixed"
+    if not PRETEND:
+        with open(outpath, 'w') as fout:
+            with open(path, 'r') as fin:
+                for old_line in fin:
+                    if len(old_line) > 0 and old_line[0] == '#':
+                        fout.write(old_line)
+                        continue
+                    old_idx = old_line.split()[-1]
+                    dec = old_line.split()[1]
+                    if float(dec) >= 0:
+                        fixed_idx = old_idx.replace('U','N')
+                    else:
+                        fixed_idx = old_idx.replace('U','S')
+                    fixed_line = old_line.replace(old_idx, fixed_idx)
+                    fout.write(fixed_line)
+        fout.close()
+        shutil.move(outpath, path)
+        _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
+    return path
+
 def compute_list(name, spec):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
@@ -625,6 +650,11 @@ def compute_list(name, spec):
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
     base_list_path, n_base_sources = compute_base_list(k_min, k_max)
+    if CVZ_ONLY or NEAR_CVZ_ONLY:
+        # Replace idx column 'U' prefix with 'N'/'S' to maintain
+        # unique identifiers in combined base list.
+        fix_idx_col(base_list_path)
+
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
     _log(msg)
     _report(msg)
@@ -673,7 +703,7 @@ def compute_list(name, spec):
     if CVZ_ONLY:
         dest_path = join('target_lists_cvz_only', name)
         _report("CVZ only")
-    if NEAR_CVZ_ONLY:
+    elif NEAR_CVZ_ONLY:
         dest_path = join('target_lists_nearcvz_only', name)
         _report("Near CVZ only (|ecliptic lat| > {:})".format(NEAR_CVZ_ELAT))
     else:
@@ -693,9 +723,10 @@ if __name__ == "__main__":
     _pool = multiprocessing.Pool(N_PROCESSES)
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
-    subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
+    subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only ./target_lists_nearcvz_only', shell=True)
 
-    compute_list('global_alignment', target_lists['global_alignment'])
+    compute_list('global_alignment_cvz', target_lists['global_alignment'])
+#    compute_list('global_alignment_nearcvz', target_lists['global_alignment'])
 
 #    compute_list('initial_image_mosaic_R17_fs', target_lists['initial_image_mosaic_R17_fs'])
 
