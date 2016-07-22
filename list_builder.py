@@ -27,7 +27,7 @@ PRETEND = False
 # Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
 CVZ_ONLY = True
 NEAR_CVZ_ONLY = False
-NEAR_CVZ_ELAT = 80
+NEAR_CVZ_ELAT = 75
 # Number of workers (32 for telserv1)
 N_PROCESSES = 32
 #N_PROCESSES = 1
@@ -725,14 +725,25 @@ if __name__ == "__main__":
     # Make sure destination directories exist
     subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only ./target_lists_nearcvz_only', shell=True)
 
-    compute_list('global_alignment_cvz', target_lists['global_alignment'])
-#    compute_list('global_alignment_nearcvz', target_lists['global_alignment'])
-
+# /////////////////////////
+# // EARLY COMMISSIONING //
 #    compute_list('initial_image_mosaic_R17_fs', target_lists['initial_image_mosaic_R17_fs'])
 
-#    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+# /////////////////////////
+# // GLOBAL ALIGNMENT /////
+    compute_list('global_alignment_cvz', target_lists['global_alignment'])
+##    compute_list('global_alignment_nearcvz', target_lists['global_alignment'])
 
-#    compute_list('fine_phasing_routine_maintenance', target_lists['fine_phasing_routine_maintenance'])
+# /////////////////////////
+# // COARSE PHASING ///////
+#    compute_list('coarse_phasing_nearcvz', target_lists['coarse_phasing_R03'])
+##    compute_list('coarse_phasing_cvz', target_lists['coarse_phasing_R03'])
+##    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+
+# /////////////////////////
+# // FINE PHASING /////////
+#    compute_list('fine_phasing_cvz', target_lists['fine_phasing_routine_maintenance'])
+##    compute_list('fine_phasing_routine_maintenance', target_lists['fine_phasing_routine_maintenance'])
 
     # Without writing a full dependency solver, this should be enough to ensure
     # that target lists sharing the same base mag criteria don't clobber
