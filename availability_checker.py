@@ -14,6 +14,10 @@ One command-line argument, second argument optional
 1. The target list produced by list_builder.py
 2. (optional) The reduced target list produced by sort_targets.py
 
+Providing a '--lite' flag tells the script to skip the creation of the viewing
+zone sky animation and instead only produce static plots, reducing the
+execution time signficantly.
+
 EXAMPLES
 
 1. Plot all target candidates found by list_builder, and store the daily
@@ -25,6 +29,8 @@ EXAMPLES
    initial_image_mosaic_R45.mp4
    The availability table is stored in
    initial_image_mosaic_R45_avail.npy
+   The static plot of availabiltiy versus date is store in
+   initial_image_mosaic_R45_avail.png
 
 2. Plot all target candidates found by list_builder, store the daily
    availability table in a numpy object, and make a separate sky animation
@@ -38,6 +44,8 @@ EXAMPLES
    initial_image_mosaic_R45_avail.npy
    The animated sky plot of the reduced target candidate list is stored in
    initial_image_mosaic_R45_NS_reduc.mp4
+   The static plot of availabiltiy versus date is store in
+   initial_image_mosaic_R45_avail.png
 
 '''
 
@@ -52,6 +60,7 @@ import os.path
 from astropy.io import ascii
 import ephem
 import pdb
+import argparse
 
 def read_commstars(filename):
     """Read in a text table with columns for RA, Dec, J, H, K mag,
@@ -363,8 +372,8 @@ def precompute_availability(catalog, start_date, n_days):
 
     return sun_instances, availability_flags
 
-#def analyze_catalog(catalog_path, kind=None):
-def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay'):
+def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
+                    launch_date=datetime.datetime(2018, 10, 1), n_days=int(1.5*365)):
     _, catalog_name = os.path.split(catalog_path)
     catalog_name, _ = os.path.splitext(catalog_name)
     if kind == 'jay':
@@ -382,10 +391,6 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay'):
     else:
         reduc_catalog = None
 
-#    pdb.set_trace()
-    n_days = int(1.5 * 365)
-    launch_date = datetime.datetime(2018, 10, 1)  # placeholder
-
     # First light will occur at about 28 days after launch, initiating
     # wavefront sensing and control activities to align the mirror segments.
     # Instrument checkout will start 37 days after launch, well before the
@@ -400,51 +405,9 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay'):
     )
     avail_fname = "%s_avail.npy" % catalog_name
     np.save(avail_fname, availability)
-    
-    fig = plt.figure(figsize=(14, 8))
-    sky_ax = plt.subplot2grid(
-        (3,2), (0, 0),
-        colspan=2, rowspan=2,
-        projection='mollweide'
-    )
-    availability_ax = plt.subplot2grid(
-        (3,2), (2, 0),
-        colspan=2, rowspan=1
-    )
 
-    def update_for_day(frame_num):
-        # current_date = commissioning_begins + datetime.timedelta(days=frame_num)
-        sky_ax.clear()
-        availability_ax.clear()
-        plot_sky(sky_ax, availability_ax, frame_num, catalog, suns, availability)
-        availability_ax.set_xlabel('Day since {}'.format(commissioning_begins))
-        availability_ax.set_xlim(0, n_days)
-        availability_ax.set_ylabel('N targets')
-        sky_ax.set_title('{} ({} + {})'.format(
-            commissioning_begins + datetime.timedelta(frame_num),
-            commissioning_begins,
-            datetime.timedelta(frame_num),
-        ))
-
-    psf_ani = animation.FuncAnimation(fig, update_for_day, n_days,
-                                      interval=100, blit=True)
-    psf_ani.save(
-        '{}.mp4'.format(catalog_name),
-        writer='ffmpeg', bitrate=2000
-#        writer='ffmpeg', bitrate=200
-#        '{}.gif'.format(catalog_name),
-#        writer='imagemagick'
-    )
-    plt.clf()
-
-    if reduc_catalog is not None:
-        print(reduc_catalog)
-        suns, availability = precompute_availability(
-            reduc_catalog,
-            commissioning_begins,
-            n_days=n_days
-        )
-        fig2 = plt.figure(figsize=(14, 8))
+    if not lite:
+        fig = plt.figure(figsize=(14, 8))
         sky_ax = plt.subplot2grid(
             (3,2), (0, 0),
             colspan=2, rowspan=2,
@@ -454,31 +417,107 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay'):
             (3,2), (2, 0),
             colspan=2, rowspan=1
         )
-        def update_for_day2(frame_num):
+    
+        def update_for_day(frame_num):
             # current_date = commissioning_begins + datetime.timedelta(days=frame_num)
             sky_ax.clear()
             availability_ax.clear()
-            plot_sky2(sky_ax, availability_ax, frame_num, catalog, reduc_catalog, suns, availability)
-            availability_ax.set_xlabel('Day since {}'.format(commissioning_begins))
+            plot_sky(sky_ax, availability_ax, frame_num, catalog, suns, availability)
+            availability_ax.set_xlabel('Days since {}'.format(commissioning_begins))
             availability_ax.set_xlim(0, n_days)
-            # availability_ax.set_ylabel('N targets')
+            availability_ax.set_ylabel('N targets')
             sky_ax.set_title('{} ({} + {})'.format(
                 commissioning_begins + datetime.timedelta(frame_num),
                 commissioning_begins,
                 datetime.timedelta(frame_num),
             ))
-        reduc_psf_ani = animation.FuncAnimation(fig2, update_for_day2, n_days,
-                                                interval=100, blit=True)
-        reduc_psf_ani.save(
-            '{}.mp4'.format(reduc_catalog_name),
+    
+        psf_ani = animation.FuncAnimation(fig, update_for_day, n_days,
+                                          interval=100, blit=True)
+        psf_ani.save(
+            '{}.mp4'.format(catalog_name),
             writer='ffmpeg', bitrate=2000
+    #        writer='ffmpeg', bitrate=200
+    #        '{}.gif'.format(catalog_name),
+    #        writer='imagemagick'
         )
+        plt.clf()
+    # Simple plot of availability versus time
+    xmax = np.min([365, n_days])
+    plt.figure(figsize=(8,6))
+    plt.plot(np.arange(xmax), np.sum(availability[:,:xmax], axis=0), linewidth=2)
+    plt.xlabel('Days since {}'.format(commissioning_begins))
+    plt.ylabel('Number of available targets')
+    plt.xlim([0, xmax])
+    plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
+    plt.savefig('{}.png'.format(catalog_name), format='png')
+    print("Wrote availability plot to {}.png".format(catalog_name))
+    plt.clf()
+
+    if reduc_catalog is not None:
+        print(reduc_catalog)
+        suns, availability = precompute_availability(
+            reduc_catalog,
+            commissioning_begins,
+            n_days=n_days
+        )
+        if not lite:
+            fig2 = plt.figure(figsize=(14, 8))
+            sky_ax = plt.subplot2grid(
+                (3,2), (0, 0),
+                colspan=2, rowspan=2,
+                projection='mollweide'
+            )
+            availability_ax = plt.subplot2grid(
+                (3,2), (2, 0),
+                colspan=2, rowspan=1
+            )
+            def update_for_day2(frame_num):
+                # current_date = commissioning_begins + datetime.timedelta(days=frame_num)
+                sky_ax.clear()
+                availability_ax.clear()
+                plot_sky2(sky_ax, availability_ax, frame_num, catalog, reduc_catalog, suns, availability)
+                availability_ax.set_xlabel('Day since {}'.format(commissioning_begins))
+                availability_ax.set_xlim(0, n_days)
+                # availability_ax.set_ylabel('N targets')
+                sky_ax.set_title('{} ({} + {})'.format(
+                    commissioning_begins + datetime.timedelta(frame_num),
+                    commissioning_begins,
+                    datetime.timedelta(frame_num),
+                ))
+            reduc_psf_ani = animation.FuncAnimation(fig2, update_for_day2, n_days,
+                                                    interval=100, blit=True)
+            reduc_psf_ani.save(
+                '{}.mp4'.format(reduc_catalog_name),
+                writer='ffmpeg', bitrate=2000
+            )
+            plt.clf()
+        # Simple plot of availability versus time
+        xmax = np.min([365, n_days])
+        plt.figure(figsize=(8,6))
+        plt.plot(np.arange(xmax), np.sum(availability[:,:xmax], axis=0), linewidth=2)
+        plt.xlabel('Days since {}'.format(commissioning_begins))
+        plt.ylabel('Number of available targets')
+        plt.xlim([0, xmax])
+        plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
+        plt.savefig('{}.png'.format(reduc_catalog_name), format='png')
+        print("Wrote availability plot to {}.png".format(reduc_catalog_name))
         plt.clf()
 
 if __name__ == "__main__":
-    import sys
-#    analyze_catalog(sys.argv[-1],'not')
-    if len(sys.argv) == 2:
-        analyze_catalog(sys.argv[1], None, 'not')
-    elif len(sys.argv) > 2:
-        analyze_catalog(sys.argv[1], sys.argv[2], 'not')
+    parser = argparse.ArgumentParser(description="Show the availability of a list of targets in the JWST viewing zone over time.")
+    parser.add_argument("--lite", help="Skip the animation; only produce a static availability vs time plot", action="store_true")
+    parser.add_argument("targets", nargs='+', help="1 or 2 target list files. The second, optional list is a down-selected version.")
+
+    args = parser.parse_args()
+
+    jwst_launch = datetime.datetime(2018, 10, 1)
+
+    if len(args.targets) == 1:
+        analyze_catalog(args.targets[0], None, kind='not', lite=args.lite, launch_date=jwst_launch)
+        pass
+    elif len(args.targets) == 2:
+        analyze_catalog(args.targets[0], args.targets[1], kind='not', lite=args.lite, launch_date=jwst_launch)
+        pass
+    else:
+        print("Too many target list inputs: {}, must specify either one or two files".format(args.targets))
