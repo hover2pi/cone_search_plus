@@ -29,7 +29,7 @@ EXAMPLES
    initial_image_mosaic_R45.mp4
    The availability table is stored in
    initial_image_mosaic_R45_avail.npy
-   The static plot of availabiltiy versus date is store in
+   The static plot of availabiltiy versus date is stored in
    initial_image_mosaic_R45_avail.png
 
 2. Plot all target candidates found by list_builder, store the daily
@@ -42,10 +42,12 @@ EXAMPLES
    initial_image_mosaic_R45.mp4
    The availability table is stored in
    initial_image_mosaic_R45_avail.npy
+   The static plot of availabiltiy versus date is stored in
+   initial_image_mosaic_R45_avail.png
    The animated sky plot of the reduced target candidate list is stored in
    initial_image_mosaic_R45_NS_reduc.mp4
-   The static plot of availabiltiy versus date is store in
-   initial_image_mosaic_R45_avail.png
+   The static plot of reduced list availabiltiy versus date is stored in
+   initial_image_mosaic_R45_NS_reduc_avail.png
 
 '''
 
