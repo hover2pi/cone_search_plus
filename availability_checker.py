@@ -378,6 +378,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
                     launch_date=datetime.datetime(2018, 10, 1), n_days=int(1.5*365)):
     _, catalog_name = os.path.split(catalog_path)
     catalog_name, _ = os.path.splitext(catalog_name)
+    subdir = os.path.dirname(catalog_path)
     if kind == 'jay':
         catalog = read_jaystars(catalog_path)
     else:
@@ -405,7 +406,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         commissioning_begins,
         n_days=n_days
     )
-    avail_fname = "%s_avail.npy" % catalog_name
+    avail_fname = os.path.join(subdir, "{:s}_avail.npy".format(catalog_name))
     np.save(avail_fname, availability)
 
     if not lite:
@@ -434,15 +435,12 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
                 datetime.timedelta(frame_num),
             ))
     
-        psf_ani = animation.FuncAnimation(fig, update_for_day, n_days,
+        anim = animation.FuncAnimation(fig, update_for_day, n_days,
                                           interval=100, blit=True)
-        psf_ani.save(
-            '{}.mp4'.format(catalog_name),
-            writer='ffmpeg', bitrate=2000
-    #        writer='ffmpeg', bitrate=200
+        anim_fname = os.path.join(subdir, "{:s}.mp4".format(catalog_name))
+        anim.save(anim_fname, writer='ffmpeg', bitrate=2000)
     #        '{}.gif'.format(catalog_name),
     #        writer='imagemagick'
-        )
         plt.clf()
     # Simple plot of availability versus time
     xmax = np.min([365, n_days])
@@ -452,8 +450,9 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
     plt.ylabel('Number of available targets')
     plt.xlim([0, xmax])
     plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
-    plt.savefig('{}.png'.format(catalog_name), format='png')
-    print("Wrote availability plot to {}.png".format(catalog_name))
+    plot_fname = os.path.join(subdir, "{:s}.png".format(catalog_name))
+    plt.savefig(plot_fname, format='png')
+    print("Wrote availability plot to {:s}".format(plot_fname))
     plt.clf()
 
     if reduc_catalog is not None:
@@ -487,12 +486,10 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
                     commissioning_begins,
                     datetime.timedelta(frame_num),
                 ))
-            reduc_psf_ani = animation.FuncAnimation(fig2, update_for_day2, n_days,
-                                                    interval=100, blit=True)
-            reduc_psf_ani.save(
-                '{}.mp4'.format(reduc_catalog_name),
-                writer='ffmpeg', bitrate=2000
-            )
+            reduc_anim = animation.FuncAnimation(fig2, update_for_day2, n_days,
+                                                 interval=100, blit=True)
+            reduc_anim_fname = os.path.join(subdir, "{:s}.mp4".format(reduc_catalog_name))
+            reduc_anim.save(reduc_anim_fname, writer='ffmpeg', bitrate=2000)
             plt.clf()
         # Simple plot of availability versus time
         xmax = np.min([365, n_days])
@@ -502,8 +499,9 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         plt.ylabel('Number of available targets')
         plt.xlim([0, xmax])
         plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
-        plt.savefig('{}.png'.format(reduc_catalog_name), format='png')
-        print("Wrote availability plot to {}.png".format(reduc_catalog_name))
+        reduc_plot_fname = os.path.join(subdir, "{:s}.png".format(reduc_catalog_name))
+        plt.savefig(reduc_plot_fname, format='png')
+        print("Wrote availability plot to {:s}".format(reduc_plot_fname))
         plt.clf()
 
 if __name__ == "__main__":
@@ -515,11 +513,12 @@ if __name__ == "__main__":
 
     jwst_launch = datetime.datetime(2018, 10, 1)
 
+    assert os.path.exists(args.targets[0]), "Input target list does not exist."
+
     if len(args.targets) == 1:
         analyze_catalog(args.targets[0], None, kind='not', lite=args.lite, launch_date=jwst_launch)
-        pass
     elif len(args.targets) == 2:
+        assert os.path.exists(args.targets[1]), "Second input target list does not exist."
         analyze_catalog(args.targets[0], args.targets[1], kind='not', lite=args.lite, launch_date=jwst_launch)
-        pass
     else:
         print("Too many target list inputs: {}, must specify either one or two files".format(args.targets))
