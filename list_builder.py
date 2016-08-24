@@ -634,7 +634,7 @@ def fix_idx_col(path, pretend=False):
         _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
     return path
 
-def compute_list(name, spec, newfilepath, pretend=False):
+def compute_list(name, spec, list_subdir, pretend=False):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
     target criteria that can be handled by this script
@@ -712,7 +712,7 @@ def compute_list(name, spec, newfilepath, pretend=False):
     #    _report("Near CVZ only (|ecliptic lat| > {:})".format(NEAR_CVZ_ELAT))
     #else:
     #    dest_path = join('target_lists', name)
-    dest_path = join(newfilepath, name)
+    dest_path = join(list_subdir, name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
     if not pretend:
         shutil.copy(pruned_list_path, dest_path)
@@ -739,7 +739,9 @@ if __name__ == "__main__":
     subprocess.call("mkdir -p ./cache {:s}".format(os.path.normpath(args.newfilepath)), shell=True)
 
     assert args.category in target_lists, "The specified target category does not exist in the target_lists dictionary of list_specs.py."
-    compute_list(args.category, target_lists[args.category], os.path.normpath(args.newfilepath), pretend=args.nowrite)
+    list_subdir = join(os.path.normpath(args.newfilepath), args.category)
+    subprocess.call("mkdir -p {:s}".format(list_subdir), shell=True)
+    compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
 
 # /////////////////////////
 # // EARLY COMMISSIONING //
