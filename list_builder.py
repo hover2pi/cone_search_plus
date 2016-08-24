@@ -634,7 +634,7 @@ def fix_idx_col(path, pretend=False):
         _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
     return path
 
-def compute_list(name, spec, newlistpath, pretend=False):
+def compute_list(name, spec, list_subdir, pretend=False):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
     target criteria that can be handled by this script
@@ -712,7 +712,7 @@ def compute_list(name, spec, newlistpath, pretend=False):
     #    _report("Near CVZ only (|ecliptic lat| > {:})".format(NEAR_CVZ_ELAT))
     #else:
     #    dest_path = join('target_lists', name)
-    dest_path = join(newlistpath, name)
+    dest_path = join(list_subdir, name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
     if not pretend:
         shutil.copy(pruned_list_path, dest_path)
@@ -726,7 +726,7 @@ def compute_list(name, spec, newlistpath, pretend=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build a list of stars meeting the provided isolation criteria, based on 2MASS and GSC2 catalog queries.")
     parser.add_argument("category", type=str, help="Category of the target list to build; must be a key in the target_list dictionary specified in list_specs.py.")
-    parser.add_argument("--newlistpath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), help="Destination directory for new target lists.")
+    parser.add_argument("--newfilepath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), help="Destination directory for new target lists.")
     parser.add_argument("--nproc", type=int, default=32, help="Number of processor cores to assign to query workers.")
     parser.add_argument("--nowrite", help="Do not write the new list file; only display the results.", action="store_true")
 
@@ -736,10 +736,12 @@ if __name__ == "__main__":
     _pool = multiprocessing.Pool(args.nproc)
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
-    subprocess.call("mkdir -p ./cache {:s}".format(os.path.normpath(args.newlistpath)), shell=True)
+    subprocess.call("mkdir -p ./cache {:s}".format(os.path.normpath(args.newfilepath)), shell=True)
 
     assert args.category in target_lists, "The specified target category does not exist in the target_lists dictionary of list_specs.py."
-    compute_list(args.category, target_lists[args.category], os.path.normpath(args.newlistpath), pretend=args.nowrite)
+    list_subdir = join(os.path.normpath(args.newfilepath), args.category)
+    subprocess.call("mkdir -p {:s}".format(list_subdir), shell=True)
+    compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
 
 # /////////////////////////
 # // EARLY COMMISSIONING //
