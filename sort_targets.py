@@ -449,7 +449,7 @@ if __name__ == "__main__":
         if not args.nowrite:
             reduc_targets_full.write(reduc_targets_fname, format='ascii.no_header', overwrite=True)
             reduc_targets_RADec.write(reduc_targets_RADec_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii', delimiter=',')
+            reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii', delimiter=',', overwrite=True)
             reduc_targets_twomass.tofile(reduc_targets_twomass_fname,sep="\n")
             print('Wrote all-latitude reduced target lists to\n%s,\n%s,\n%s,\n%s'%(reduc_targets_fname, reduc_targets_RADec_fname, reduc_targets_twomass_fname, reduc_targets_apt_fname))
     if reduc_status_eN:
@@ -502,7 +502,6 @@ if __name__ == "__main__":
         if not args.nowrite:
             reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header', overwrite=True)
             reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header', overwrite=True)
-            #reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii.no_header', delimiter=',')
             reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',', overwrite=True)
             reduc_targets_eNS_twomass.tofile(reduc_targets_eNS_twomass_fname,sep="\n")
             print('Wrote combined northern+southern reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eNS_fname, reduc_targets_eNS_RADec_fname, reduc_targets_eNS_twomass_fname))
