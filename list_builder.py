@@ -741,7 +741,7 @@ if __name__ == "__main__":
     assert args.category in target_lists, "The specified target category does not exist in the target_lists dictionary of list_specs.py."
     list_subdir = join(os.path.normpath(args.newfilepath), args.category)
     subprocess.call("mkdir -p {:s}".format(list_subdir), shell=True)
-    compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
+    new_list_name = compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
 
 # /////////////////////////
 # // EARLY COMMISSIONING //
