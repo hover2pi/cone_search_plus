@@ -439,7 +439,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
     
         anim = animation.FuncAnimation(fig, update_for_day, n_days,
                                           interval=100, blit=True)
-        anim_fname = os.path.join(subdir, "{:s}.mp4".format(catalog_name))
+        anim_fname = os.path.join(subdir, "{:s}_avail.mp4".format(catalog_name))
         anim.save(anim_fname, writer='ffmpeg', bitrate=2000)
     #        '{}.gif'.format(catalog_name),
     #        writer='imagemagick'
@@ -452,7 +452,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
     plt.ylabel('Number of available targets')
     plt.xlim([0, xmax])
     plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
-    plot_fname = os.path.join(subdir, "{:s}.png".format(catalog_name))
+    plot_fname = os.path.join(subdir, "{:s}_avail.png".format(catalog_name))
     plt.savefig(plot_fname, format='png')
     print("Wrote availability plot to {:s}".format(plot_fname))
     plt.clf()
@@ -490,7 +490,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
                 ))
             reduc_anim = animation.FuncAnimation(fig2, update_for_day2, n_days,
                                                  interval=100, blit=True)
-            reduc_anim_fname = os.path.join(subdir, "{:s}.mp4".format(reduc_catalog_name))
+            reduc_anim_fname = os.path.join(subdir, "{:s}_avail.mp4".format(reduc_catalog_name))
             reduc_anim.save(reduc_anim_fname, writer='ffmpeg', bitrate=2000)
             plt.clf()
         # Simple plot of availability versus time
@@ -501,7 +501,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         plt.ylabel('Number of available targets')
         plt.xlim([0, xmax])
         plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
-        reduc_plot_fname = os.path.join(subdir, "{:s}.png".format(reduc_catalog_name))
+        reduc_plot_fname = os.path.join(subdir, "{:s}_avail.png".format(reduc_catalog_name))
         plt.savefig(reduc_plot_fname, format='png')
         print("Wrote availability plot to {:s}".format(reduc_plot_fname))
         plt.clf()
