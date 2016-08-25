@@ -727,13 +727,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build a list of stars meeting the provided isolation criteria, based on 2MASS and GSC2 catalog queries.")
     parser.add_argument("category", type=str, help="Category of the target list to build; must be a key in the target_list dictionary specified in list_specs.py.")
     parser.add_argument("--newfilepath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), help="Destination directory for new target lists.")
-    parser.add_argument("--nproc", type=int, default=32, help="Number of processor cores to assign to query workers.")
+    parser.add_argument("--nproc", type=int, help="Number of processor cores to assign to query workers.")
     parser.add_argument("--nowrite", help="Do not write the new list file; only display the results.", action="store_true")
 
     args = parser.parse_args()
 
     # Set up these shared/global variables
-    _pool = multiprocessing.Pool(args.nproc)
+    if args.nproc:
+        _pool = multiprocessing.Pool(args.nproc)
+    else:
+        _pool = multiprocessing.Pool(multiprocessing.cpu_count()/2)
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
     subprocess.call("mkdir -p ./cache {:s}".format(os.path.normpath(args.newfilepath)), shell=True)
@@ -743,42 +746,5 @@ if __name__ == "__main__":
     subprocess.call("mkdir -p {:s}".format(list_subdir), shell=True)
     new_list_name = compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
 
-# /////////////////////////
-# // EARLY COMMISSIONING //
-#    compute_list('early_comm', target_lists['early_comm'])
-
-# /////////////////////////
-# // GLOBAL ALIGNMENT /////
-#    compute_list('global_alignment', target_lists['global_alignment'])
-#    compute_list('global_alignment_faint', target_lists['global_alignment_faint'])
-
-# /////////////////////////
-# // COARSE PHASING ///////
-#    compute_list('coarse_phasing', target_lists['coarse_phasing'])
-
-# /////////////////////////
-# // FINE PHASING /////////
-#    compute_list('fine_phasing', target_lists['fine_phasing'])
-
-    # Without writing a full dependency solver, this should be enough to ensure
-    # that target lists sharing the same base mag criteria don't clobber
-    # each other when run with multiprocessing
-    # early_commissioning, global_alignment - both 4.5-5.5
-#    compute_list('early_commissioning', target_lists['early_commissioning'])
-    # coarse_phasing, fine_phasing_routine_maintenance - both 8.5-9.5
-#    compute_list('coarse_phasing', target_lists['coarse_phasing'])
-
-
-    # Now that intermediate lists are in place for those that conflict,
-    # do the rest all at once
-#    rest_of_the_target_lists = {
-#        'early_comm': target_lists['early_comm'],
-#        'global_alignment': target_lists['global_alignment'],
-#        'routine_wfsc': target_lists['routine_wfsc'],
-#        # 'mimf_miri': target_lists['mimf_miri'],
-#    }
-
-#    for name, spec in rest_of_the_target_lists.items():
-#        compute_list(name, spec)
     _pool.close()
     _pool.join()
