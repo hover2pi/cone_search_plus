@@ -504,8 +504,17 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
         reduc_plot_fname = os.path.join(subdir, "{:s}_avail.png".format(reduc_catalog_name))
         plt.savefig(reduc_plot_fname, format='png')
-        print("Wrote availability plot to {:s}".format(reduc_plot_fname))
         plt.clf()
+        plt.figure(figsize=(8,6))
+        plt.imshow(np.array(availability[:,:xmax]).astype(float)*0.5, vmax=1, interpolation='nearest', cmap='Blues', aspect='auto')
+        N_stars = availability.shape[0]
+        plt.yticks(np.arange(N_stars), (np.arange(N_stars)+1)[::-1])
+        plt.xlabel('Days since {}'.format(commissioning_begins))
+        plt.ylabel('Target')
+        reduc_window_plot_fname = os.path.join(subdir, "{:s}_windows.png".format(reduc_catalog_name))
+        plt.savefig(reduc_window_plot_fname, format='png')
+        plt.clf()
+        print("Wrote availability and window plots to {:s}".format(reduc_plot_fname, reduc_window_plot_fname))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Show the availability of a list of targets in the JWST viewing zone over time.")
