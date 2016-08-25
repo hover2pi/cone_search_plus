@@ -54,6 +54,8 @@ EXAMPLES
 from __future__ import print_function
 import glob
 import matplotlib
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
 import matplotlib.animation as animation
 from matplotlib import pyplot as plt
 import numpy as np
