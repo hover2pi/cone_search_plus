@@ -3,15 +3,20 @@ import os
 import datetime
 import numpy as np
 import subprocess
+import multiprocessing
 import argparse
 
 from list_specs import target_lists
 
-def run_commstars_pipeline(category, new_file_path, max_final_length=10, min_per_day=3, min_per_day_hemi=3):
+def run_ote_target_pipeline(category, new_file_path, all_cores=False, max_final_length=10, min_per_day=3, min_per_day_hemi=3):
     #///////////////////////////////////////////
     # BUILD TARGET LISTS
     #///////////////////////////////////////////
-    subprocess.call(['python2', 'list_builder.py', category, '--newfilepath', new_file_path])
+    if all_cores:
+        n_cores = multiprocessing.cpu_count()
+    else:
+        n_cores = multiprocessing.cpu_count()/2
+    subprocess.check_output(['python2', 'list_builder.py', category, '--newfilepath', new_file_path, '--ncores', str(n_cores)])
     list_name = os.path.join(new_file_path, category, category)
     assert os.path.exists(list_name), 'Expected list_builder product does not exist.'
 
@@ -48,9 +53,12 @@ def run_commstars_pipeline(category, new_file_path, max_final_length=10, min_per
     subprocess.call(['python2', 'write_gallery.py', reduc_list_2mass_name, '{:.3f}'.format(cutout_size)])
 
 if __name__ == "__main__":
+    assert "OTE_TARGETS" in os.environ, "Set the OTE_TARGETS shell variable to specify location of new target list products, otherwise provide an explicit path using the --newfilepath command line argument"
     parser = argparse.ArgumentParser(description="Top level driver script to produce lists of OTE commissioning target candidates.")
-    parser.add_argument("--newfilepath", type=str, default=os.path.normpath("../target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d"))),
+    parser.add_argument("--newfilepath", type=str,
+                        default=os.path.join(os.path.normpath(os.environ["OTE_TARGETS"]),"target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d"))),
                         help="Destination directory for new files.")
+    parser.add_argument("--allcores", default=False, help="Use all processor cores when running list_builder catalog queries.", action="store_true")
     args = parser.parse_args()
     
     subprocess.call("mkdir -p {:s}".format(args.newfilepath), shell=True)
@@ -58,19 +66,19 @@ if __name__ == "__main__":
     #///////////////////////////////////////////
     # EARLY COMMISSIONING
     #///////////////////////////////////////////
-    run_commstars_pipeline('early_comm', args.newfilepath)
+    run_ote_target_pipeline('early_comm', args.newfilepath, all_cores=args.allcores)
 
     #///////////////////////////////////////////
     # GLOBAL ALIGNMENT
     #///////////////////////////////////////////
-    run_commstars_pipeline('global_alignment', args.newfilepath, min_per_day_hemi=3)
+    run_ote_target_pipeline('global_alignment', args.newfilepath, all_cores=args.allcores, min_per_day_hemi=3)
 
     #///////////////////////////////////////////
     # COARSE PHASING
     #///////////////////////////////////////////
-    run_commstars_pipeline('coarse_phasing', args.newfilepath, min_per_day_hemi=3)
+    run_ote_target_pipeline('coarse_phasing', args.newfilepath, all_cores=args.allcores, min_per_day_hemi=3)
 
     #///////////////////////////////////////////
     # FINE PHASING
     #///////////////////////////////////////////
-    run_commstars_pipeline('fine_phasing', args.newfilepath, min_per_day_hemi=5)
+    run_ote_target_pipeline('fine_phasing', args.newfilepath, all_cores=args.allcores, min_per_day_hemi=5)

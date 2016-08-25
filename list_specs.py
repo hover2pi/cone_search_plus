@@ -49,14 +49,13 @@ jay_lists = {
 
 # Target specifications as of WFSCOWG May 2015
 
-target_lists = {
+target_lists_2015 = {
     'initial_image_mosaic': {
         'k_mag': (-5, 5), # there are some really bright stars in K (~ -3), make sure we get them
         'neighbors': (
             {'delta_k': 5, 'r_arcmin': 30},
             {'delta_k': 0.5, 'r_arcmin': 45},
         ),
-        'allow_non_aaa': True,
     },
     'initial_image_mosaic_R45': {
         'k_mag': (-5, 5), # there are some really bright stars in K (~ -3), make sure we get them
@@ -149,4 +148,60 @@ target_lists = {
             {'delta_k': 2.5, 'r_arcmin': 2},
         )
     },
+}
+
+target_lists = {
+
+    'early_comm': {
+        'k_mag': (4.5, 6.),
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 17},
+            {'delta_k': 0.5, 'r_arcmin': 45},
+        ),
+    },
+
+    'global_alignment': {
+        'k_mag': (4.5, 5.5),
+        'neighbors': (
+            {'delta_k': 7, 'r_arcmin': 2.5},
+        ),
+        'elat': 85
+    },
+
+    'global_alignment_faint': {
+        'k_mag': (6.5, 7.5),
+        'neighbors': (
+            {'delta_k': 7, 'r_arcmin': 2.5},
+        ),
+        'elat': 85
+    },
+
+    'coarse_phasing': {
+        'k_mag': (8.5, 9.5),
+        'neighbors': (
+            {'delta_k': 5, 'r_arcmin': 3.0},
+        )
+    },
+
+    'fine_phasing': {
+        'k_mag': (6.5, 7.5),
+        'neighbors': (
+            {'delta_k': 7, 'r_arcmin': 0.5,},
+        ),
+        # "neighbors in SI FoV must be dimmer than target"
+        # NIRCam FoV 2.16' x 2.16'
+        'no_brighter_neighbors_r_arcmin': 3.05,
+        'elat': 85
+    },
+
+    'routine_wfsc': {
+        'k_mag': (6.5, 7.5),
+        'neighbors': (
+            {'delta_k': 7, 'r_arcmin': 0.5,},
+        ),
+        # "neighbors in SI FoV must be dimmer than target"
+        # NIRCam FoV 2.16' x 2.16'
+        'no_brighter_neighbors_r_arcmin': 3.05
+    },
+
 }
