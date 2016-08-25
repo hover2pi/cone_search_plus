@@ -5,6 +5,7 @@ import os
 import datetime
 import multiprocessing
 import subprocess
+import pdb
 import shutil
 import numpy as np
 import requests
@@ -13,6 +14,7 @@ from astropy.table import Table
 from scipy.interpolate import interp1d
 from pprint import pformat
 from os.path import split, join, exists
+import argparse
 
 # DONE: warn when neighbor criteria push below completeness limit in K for 2MASS
 # N/A : flag stars at poles in RA/Dec as potentially having undetected neighbors
@@ -22,11 +24,14 @@ from os.path import split, join, exists
 from list_specs import target_lists, jay_lists
 
 # Skip anything that touches the filesystem (for debugging)
-PRETEND = False
+#PRETEND = False
 # Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
-CVZ_ONLY = False
+#CVZ_ONLY = True
+#NEAR_CVZ_ONLY = False
+#NEAR_CVZ_ELAT = 75
 # Number of workers (32 for telserv1)
-N_PROCESSES = 32
+#N_PROCESSES = 16
+#N_PROCESSES = 1
 # Number of star entries per chunk of list (chunks are inputs to cone
 # searches)
 # 1000 star chunks leads to 300 - 1500 MB neighbor lists
@@ -101,7 +106,7 @@ def check_separation(point_a, point_b, radius_degrees):
     else:
         return False
 
-def run_command(command_args, input_from=None, output_to=None):
+def run_command(command_args, input_from=None, output_to=None, pretend=False):
     """
     Take an argument list starting with a path to an executable
     and run, redirecting output to files specified by a path name
@@ -114,7 +119,7 @@ def run_command(command_args, input_from=None, output_to=None):
         command_string += "> {}".format(output_to)
     _log(command_string)
 
-    if not PRETEND:
+    if not pretend:
         input_file = open(input_from) if input_from else None
         output_file = open(output_to, 'w') if output_to else None
         try:
@@ -159,16 +164,16 @@ def load_base_stars(filename):
             indices.add(idx)
     return indices, lookup
 
-def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
+def chunk_list(base_list_path, chunk_size=CHUNK_SIZE, pretend=False):
     """Takes a path to a list, makes new files with the ".chunk_00000"
     suffix for every `CHUNK_SIZE` lines from the input
     """
     chunk_template = '.chunk_{:05}'
-    if PRETEND and not exists(base_list_path):
+    if pretend and not exists(base_list_path):
         return [base_list_path + chunk_template.format(i+1) for i in range(10)]
     line_count = 0
     chunk_count = 1
-    if not PRETEND:
+    if not pretend:
         chunk = open(base_list_path + chunk_template.format(1), 'w')
     else:
         chunk = None
@@ -176,32 +181,37 @@ def chunk_list(base_list_path, chunk_size=CHUNK_SIZE):
     # _log('first chunk = {}'.format(chunk_paths[0]))
     with open(base_list_path, 'r') as base_list:
         for idx, line in enumerate(base_list):
-            if not PRETEND:
+            if not pretend:
                 chunk.write(line)
             
             if (idx + 1) % chunk_size == 0:
                 # write/close chunk, open new file for next
-                if not PRETEND:
+                if not pretend:
                     chunk.close()
                 chunk_count += 1
-                if not PRETEND:
+                if not pretend:
                     chunk = open(base_list_path + chunk_template.format(chunk_count), 'w')
                 chunk_paths.append(base_list_path + chunk_template.format(chunk_count))
                 # _log('next chunk = {}'.format(chunk_paths[-1]))
-    if not PRETEND:
+    if not pretend:
         chunk.close()
     return chunk_paths
 
-def compute_base_list(k_min, k_max):
+def compute_base_list(k_min, k_max, spec, pretend=False):
     """Simply query for stars in some magnitude range, optionally
-    limiting to the CVZ. The resulting file path is returned, and will
+    limiting the ecliptic latitude. The resulting file path is returned, and will
     be of the form `cache/base_<k_min>_k_<k_max>`"""
     # generate filename
     k_min_string = '{:1.1f}'.format(k_min)
     k_max_string = '{:1.1f}'.format(k_max)
     base_list_name = 'base_{}_k_{}'.format(k_min_string, k_max_string)
-    if CVZ_ONLY:
-        base_list_name += "_cvz"
+    elat_min = spec.get('elat')
+    if elat_min is not None:
+        base_list_name += "_ELAT_MIN_{:d}".format(elat_min)
+#    if CVZ_ONLY:
+#        base_list_name += "_cvz"
+#    elif NEAR_CVZ_ONLY:
+#        base_list_name += "_nearcvz"
     base_list_path = join('cache', base_list_name)
     # build args list
     args = [
@@ -212,34 +222,30 @@ def compute_base_list(k_min, k_max):
     # test existence
     if exists(base_list_path):
         _log("{} exists".format(base_list_path))
-        return base_list_path, count_non_comment_lines(base_list_path)
-    if not CVZ_ONLY:
-        # call subprocess
-        # write to scratch file
-        run_command(args, output_to=base_list_path)
-    else:
-        north_args = args + ['EB_MIN={}'.format(85), 'EB_MAX={}'.format(90)]
+        return base_list_path, count_non_comment_lines(base_list_path, pretend=pretend)
+    if elat_min is not None:
+        north_args = args + ['EB_MIN={}'.format(elat_min), 'EB_MAX={}'.format(90)]
         north_path = base_list_path + '.north'
-        run_command(north_args, output_to=north_path)
-
-        south_args = args + ['EB_MAX={}'.format(-85), 'EB_MIN={}'.format(-90)]
+        run_command(north_args, output_to=north_path, pretend=pretend)
+        south_args = args + ['EB_MAX={}'.format(-elat_min), 'EB_MIN={}'.format(-90)]
         south_path = base_list_path + '.south'
-        run_command(south_args, output_to=south_path)
+        run_command(south_args, output_to=south_path, pretend=pretend)
+        run_command(['cat', north_path, south_path], output_to=base_list_path, pretend=pretend)
+    else:
+        run_command(args, output_to=base_list_path, pretend=pretend)
 
-        run_command(['cat', north_path, south_path], output_to=base_list_path)
+    return base_list_path, count_non_comment_lines(base_list_path, pretend=pretend)
 
-    return base_list_path, count_non_comment_lines(base_list_path)
-
-def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_path, only_reject_brighter_neighbors):
+def prune_stars_with_neighbors(base_list_path, neighbor_list_path, output_list_path, only_reject_brighter_neighbors, pretend=False):
     """Takes a base list (or chunk of a base list) and a corresponding
     neighbor list. Produces an output list at `output_list_path` with
     the stars from `base_list_path` that have *no* neighbors
     in the neighbor list"""
     if exists(output_list_path):
         _log("{} exists".format(output_list_path))
-        return output_list_path, count_non_comment_lines(output_list_path)
+        return output_list_path, count_non_comment_lines(output_list_path, pretend=pretend)
 
-    if not PRETEND:
+    if not pretend:
         base_indices, base_lookup = load_base_stars(base_list_path)
         with open(neighbor_list_path, 'r') as f:
             comment_lines = 0
@@ -299,7 +305,9 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
     # The above doesn't work to make an empty table (it says it has no columns)
     # so be annoyingly thorough in specifying it...
     output_list = Table(names=['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx'], dtype=['<f8', '<f8', '<f8', '<f8', '<f8', 'S3', 'S9'])
-    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_cant_interpolate, count_approx_k_too_bright = 0, 0, 0, 0, 0
+    count_zero_neighbors, count_2mass_artifacts, count_missing_gscmag, count_cant_interpolate,\
+    count_approx_k_too_bright, count_neighb_k_too_bright = 0, 0, 0, 0, 0, 0
+    count_K_est_from_NpgMag, count_K_est_from_JpgMag_minus_FpgMag, count_K_est_from_JpgMag, count_K_est_from_FpgMag = 0, 0, 0, 0
     bj_rf = np.array([0.0, 0.5, 1.0, 2.0, 2.5, 3.0])  # B_J is JpgMag, R_F is FpgMag, bj_rf = JpgMag - FpgMag
     c_bk = np.array([1.5, 1.5, 2.3, 4.8, 7.0, 7.0])
     c_bk_interpolator = interp1d(bj_rf, c_bk)
@@ -314,51 +322,88 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
         # make an astropy table out of the csv table
         table = ascii.read(resp.text, guess=False, format='csv', comment=r'#.+')
         # neighbors will be those stars without KMag (because if they had KMags, they'd be in 2MASS)
-        neighbors = table[table['KMag'] == 99.99]
         # find any non-99 kmag values. there should not be any, if the query_2mass tool worked right
-        if len(table[(table['KMag'] != 99.99) & (table['class'] == 0)]) != 1:
-            # found a 2MASS neighbor that wasn't found in the query_2mass step
-            # it's safest to just discard this star; we don't need to transform
-            # GSC magnitudes to KMag or anything
-            count_2mass_artifacts += 1
-            continue
+        # NTZ: GSC neighbors with defined K mag are fine as long as they are fainter than the isolation spec;
+        #      build in a consistency check with query_2mass.
+        if len(table[(table['KMag'] != 99.99)]) != 1:
+            # More than one star in the GSC with a defined K mag; need to separate the target candidate.
+            id_target = table[table['KMag'] == np.sort(table['KMag'])[0]]['objID'][0] # Get the ID number of the target candidate
+            neighbors = table[table['objID'] != id_target]
+        else:
+            neighbors = table[table['KMag'] == 99.99]
         if len(neighbors) == 0:
             # if no neighbors at *all*, go right to appending to output list
             output_list.add_row(row)
             count_zero_neighbors += 1
             continue
-        if np.any(neighbors['FpgMag'] == 99.99) or np.any(neighbors['JpgMag'] == 99.99):
-            # can't compute transformed magnitudes for one or more neighbors
-            # so we must discard this star
+        F_miss = ( neighbors['FpgMag'] == 99.99 )
+        J_miss = ( neighbors['JpgMag'] == 99.99 )
+        N_miss = ( neighbors['NpgMag'] == 99.99 )
+        K_miss = ( neighbors['KMag'] == 99.99 )
+
+        if np.any(F_miss & J_miss & N_miss & K_miss):
+            # Discard target candidate if any neighbor lacks R_F, B_J, I_N, and K mags
             count_missing_gscmag += 1
+            _log("A neighbor missing F, J, N, and K mags:")
+            _log("query_url: ", query_url)
             continue
         else:
-            # interpolate a K mag using color relation in Anderson 2009
-            try:
-                c_bk_approx = c_bk_interpolator(neighbors['JpgMag'] - neighbors['FpgMag']) # (B_J - R_F)
-            except ValueError:
-                _log("Out of range (JpgMag - FpgMag) value processing neighbors of {}".format(base_list_path))
-                count_cant_interpolate += 1
-                continue
-            # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
-            k_approx = neighbors['JpgMag'] - c_bk_approx
-            # test length of set of matching rows with abs(computed_neighbor_k_mag - base_k_mag) < delta_k
-            neighbor_delta_ks = np.abs(k_approx - row['K'])
-            if np.any(neighbor_delta_ks >= delta_k):
+            # All neighbors have enough flux information to either estimate, or
+            # at least place a lower bound on their K mags
+            K_miss_rows = np.where( K_miss.data )
+            for kmr in K_miss_rows[0]:
+                if F_miss[kmr] & J_miss[kmr]:
+                    # Using only the N mag, place lower limit on K with an extremely conservative (red) I - K color
+                    neighbors['KMag'][kmr] = neighbors['NpgMag'][kmr] - 4.
+                    count_K_est_from_NpgMag += 1
+                elif F_miss[kmr]:
+                    # Place lower limit on K with an extremely red B_J - K = 7.0 (Anderson 2009)
+                    neighbors['KMag'][kmr] = neighbors['JpgMag'][kmr] - 7.
+                    count_K_est_from_JpgMag += 1
+                elif J_miss[kmr]:
+                    # Place lower limit on K with an extremely red R_F - K = 4.5 (Anderson 2009)
+                    neighbors['KMag'][kmr] = neighbors['FpgMag'][kmr] - 4.5
+                    count_K_est_from_FpgMag += 1
+                else:
+                    Jpg_minus_Fpg = neighbors['JpgMag'][kmr] - neighbors['FpgMag'][kmr]
+                    if np.min(bj_rf) <= Jpg_minus_Fpg <= np.max(bj_rf):
+                        # interpolate a K mag using color relation in Anderson 2009
+                        try:
+                            c_bk_approx = c_bk_interpolator(neighbors['JpgMag'][kmr] - neighbors['FpgMag'][kmr]) # (B_J - R_F)
+                        except ValueError:
+                            _log("Out of range (JpgMag - FpgMag) value processing neighbors of {}".format(base_list_path))
+                            count_cant_interpolate += 1
+                            continue
+                        # c_bk = b_j - k_2mass -> k_2mass (approx) = b_j - c_bk
+                        neighbors['KMag'][kmr] = neighbors['JpgMag'][kmr] - c_bk_approx
+                        count_K_est_from_JpgMag_minus_FpgMag += 1
+                    else:
+                        # Assume a red R_F - K color
+                        neighbors['KMag'][kmr] = neighbors['FpgMag'][kmr] - 4.5
+                        count_K_est_from_FpgMag += 1
+
+            if np.any(neighbors['KMag'] < row['K'] + delta_k):
+                _log("Neighbor with violating K mag:")
+                _log("query_url: ", query_url)
                 count_approx_k_too_bright += 1
                 continue
             else:
                 output_list.add_row(row)
+
     output_list.write(output_list_path, format='ascii.no_header')
     _log("Kept", len(output_list), "of", len(base_list))
     _log("Entries kept because zero neighbors were found:", count_zero_neighbors)
-    _log("Entries discrarded because of 2MASS artifacts: ", count_2mass_artifacts)
-    _log("Entries discarded because Fpg or Jpg magnitudes weren't available for neighbors:", count_missing_gscmag)
+#    _log("Entries discarded because of 2MASS artifacts: ", count_2mass_artifacts)
+    _log("Entries discarded because magnitudes weren't available for neighbors:", count_missing_gscmag)
     _log("Entries discarded because can't approximate K mag (input out of range):", count_cant_interpolate)
     _log("Entries discarded because approximate K mag (from Jpg - Fpg color) too bright:", count_approx_k_too_bright)
+    _log("Number of K mag estimates from I_N:", count_K_est_from_NpgMag)
+    _log("Number of K mag estimates from R_F:", count_K_est_from_FpgMag)
+    _log("Number of K mag estimates from B_J:", count_K_est_from_JpgMag)
+    _log("Number of K mag estimates from B_J - R_F:", count_K_est_from_JpgMag_minus_FpgMag)
     return output_list_path, len(output_list)
 
-def find_neighbors(base_list_path, delta_k, radius_arcmin):
+def find_neighbors(base_list_path, delta_k, radius_arcmin, pretend=False):
     """Query 2MASS for all the neighbors within radius_arcmin arcminutes
     and (if not None) delta_k magnitudes"""
     _, base_list_name = split(base_list_path)
@@ -377,21 +422,22 @@ def find_neighbors(base_list_path, delta_k, radius_arcmin):
         output_list_path += '_dk_' + delta_k_string
         args.append('DK_MAX={}'.format(delta_k_string))
 
-    run_command(args, input_from=base_list_path, output_to=output_list_path)
+    run_command(args, input_from=base_list_path, output_to=output_list_path, pretend=pretend)
 
     return output_list_path
 
-def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors, must_check_gsc):
+def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock,
+                                 only_reject_brighter_neighbors, must_check_gsc, pretend=False):
     """Used in `find_stars_without_neighbors` to neighbor-search and
     then write out those stars with no neighbors to `output_list_path`
 
     Uses a multiprocessing Lock (`output_list_lock`) to ensure
     the multiple jobs writing to the output list are well behaved"""
     _log("neighbor searching {}".format(chunk_path))
-    _log("args:", (chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors, must_check_gsc))
-    starting_total = count_non_comment_lines(chunk_path)
+    _log("args:", (chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors, must_check_gsc, pretend))
+    starting_total = count_non_comment_lines(chunk_path, pretend=pretend)
     # run cone search
-    chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin)
+    chunk_neighbors_path = find_neighbors(chunk_path, delta_k, radius_arcmin, pretend=pretend)
     # filter base list chunk
     pruned_chunk_path, n_kept_stars = prune_stars_with_neighbors(chunk_path, chunk_neighbors_path, chunk_path + '.pruned', only_reject_brighter_neighbors)
     _log("Chunk pruned with dk < {} r < {}: {} of {} remaining".format(delta_k, radius_arcmin, n_kept_stars, starting_total))
@@ -412,7 +458,7 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
 
     # append kept stars to final list
     _log("Append remaining stars from {} to {}".format(pruned_chunk_path, output_list_path))
-    if PRETEND:
+    if pretend:
         return  # bail before we touch any files
     if n_kept_stars > 0:
         # don't bother waiting on the lock if there's nothing to write
@@ -427,16 +473,16 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
                 for line in open(pruned_chunk_path):
                     output_list.write(line)
     # remove chunk and neighbors for chunk
-    _log("remove {}".format(pruned_chunk_path))
-    _log("remove {}".format(chunk_neighbors_path))
-    _log("remove {}".format(chunk_path))
     if not KEEP_INTERMEDIATES:
+        _log("remove {}".format(pruned_chunk_path))
+        _log("remove {}".format(chunk_neighbors_path))
+        _log("remove {}".format(chunk_path))
         os.remove(pruned_chunk_path)
         os.remove(chunk_neighbors_path)
         os.remove(chunk_path)
     return n_kept_stars
 
-def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors, must_check_gsc):
+def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_reject_brighter_neighbors, must_check_gsc, pretend=False):
     """Given a base list and constraints on `delta_k`, `radius_arcmin`,
     and whether only brighter neighbors disqualify a target, execute
     a parallelized search for neighbors in chunks from the base list.
@@ -460,9 +506,9 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     output_list_name = '{}_without_{}'.format(base_list_name, neighbor_list_name)
     output_list_path = join('cache', output_list_name)
     if exists(output_list_path):
-        return output_list_path, count_non_comment_lines(output_list_path)
+        return output_list_path, count_non_comment_lines(output_list_path, pretend=pretend)
 
-    if not PRETEND:
+    if not pretend:
         output_list = open(output_list_path, 'w')
         header = """# base list: {}
 # rejecting stars with neighbors
@@ -479,7 +525,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     output_list_lock = _manager.Lock()
 
     # chunk the base list
-    chunk_paths = chunk_list(base_list_path)
+    chunk_paths = chunk_list(base_list_path, pretend=pretend)
     # _log("chunk_paths = {}".format(chunk_paths))
     # neighbor search all the base chunks
     if MULTIPROCESS_CHUNKS:
@@ -492,7 +538,8 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                     output_list_path,
                     output_list_lock,
                     only_reject_brighter_neighbors,
-                    must_check_gsc)
+                    must_check_gsc,
+                    pretend)
             res = _pool.apply_async(_process_chunk_for_neighbors, args)
             results.append((res, args))
 
@@ -506,6 +553,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 total = 0
                 _log("total = 0 (reassign otherwise)")
                 import code
+#                code.interact(local=locals(), global=globals())
                 code.interact(local=dict(globals(), **locals()))
             n_stars_kept += total
     else:
@@ -520,14 +568,14 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 only_reject_brighter_neighbors,
                 must_check_gsc
             )
-    if not PRETEND:
+    if not pretend:
         output_list.close()
     return output_list_path, n_stars_kept
 
-def count_non_comment_lines(path):
+def count_non_comment_lines(path, pretend=False):
     """Counts lines in file that have data (non-empty, non-#-prefixed-comment)"""
     non_comment_lines = 0
-    if not PRETEND:
+    if not pretend:
         with open(path, 'r') as f:
             for line in f:
                 if len(line) > 0 and line[0] == '#':
@@ -538,13 +586,13 @@ def count_non_comment_lines(path):
                     non_comment_lines += 1
     return non_comment_lines
 
-def remove_non_AAA_sources(path):
+def remove_non_AAA_sources(path, pretend=False):
     """Remove all sources with PSC qual flags other than AAA
     (in other words, keep only those with good photometry in J/H/K)"""
     outpath = path + "_good"
     n_pruned = 0
     n_base_stars = 0
-    if not PRETEND:
+    if not pretend:
         with open(outpath, 'w') as fout:
             with open(path, 'r') as fin:
                 for line in fin:
@@ -561,7 +609,32 @@ def remove_non_AAA_sources(path):
     n_kept = n_base_stars - n_pruned
     return outpath, n_kept
 
-def compute_list(name, spec):
+def fix_idx_col(path, pretend=False):
+    """When we have combined separate (North and South) queries, modify
+    the "idx" identifiers based on Declination so that they are unique:
+    If Dec >= 0, replace 'U' prefix with 'N'; otherwise 'S' """
+    outpath = path + "_idxfixed"
+    if not pretend:
+        with open(outpath, 'w') as fout:
+            with open(path, 'r') as fin:
+                for old_line in fin:
+                    if len(old_line) > 0 and old_line[0] == '#':
+                        fout.write(old_line)
+                        continue
+                    old_idx = old_line.split()[-1]
+                    dec = old_line.split()[1]
+                    if float(dec) >= 0:
+                        fixed_idx = old_idx.replace('U','N')
+                    else:
+                        fixed_idx = old_idx.replace('U','S')
+                    fixed_line = old_line.replace(old_idx, fixed_idx)
+                    fout.write(fixed_line)
+        fout.close()
+        shutil.move(outpath, path)
+        _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
+    return path
+
+def compute_list(name, spec, list_subdir, pretend=False):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
     target criteria that can be handled by this script
@@ -574,12 +647,18 @@ def compute_list(name, spec):
 
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
-    base_list_path, n_base_sources = compute_base_list(k_min, k_max)
+    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, pretend=pretend)
+    elat_min = spec.get('elat')
+    if elat_min is not None:
+        # Replace idx column 'U' prefix with 'N'/'S' to maintain
+        # unique identifiers in combined base list.
+        fix_idx_col(base_list_path, pretend=pretend)
+
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
     _log(msg)
     _report(msg)
-    if not spec.get('allow_non_aaa', False):
-        base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path)
+    if name.startswith('initial_image_mosaic') == False and name.startswith('early_comm') == False:
+        base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path, pretend=pretend)
         msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
         _log(msg)
         _report(msg)
@@ -591,9 +670,9 @@ def compute_list(name, spec):
     intermediate_list_path = base_list_path
     # If one of the criteria puts us over the 2MASS completeness limit
     # we need to go check GSC-II later:
-    must_check_gsc = False
     if len(neighbor_criteria) > 0:
         for nc in neighbor_criteria:
+            must_check_gsc = False
             if k_max + nc['delta_k'] > TWOMASS_COMPLETENESS_K:
                 warning = "Warning: For {} < K < {} and deltaK < {}, max neighbor Kmag we care about is {}, but 2MASS is only complete to K={}".format(
                     k_min, k_max, nc['delta_k'], k_max + nc['delta_k'], TWOMASS_COMPLETENESS_K
@@ -602,7 +681,7 @@ def compute_list(name, spec):
                 _report(warning)
                 must_check_gsc = True
             _log("for {} prune neighbors deltaK < {} mag; r < {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
-            intermediate_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False, must_check_gsc=must_check_gsc)
+            intermediate_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False, must_check_gsc=must_check_gsc, pretend=pretend)
             _log("Got {}".format(intermediate_list_path))
             msg = "After excluding stars with neighbors in deltaK < {} mag; r < {} arcmin: {} sources".format(nc['delta_k'], nc['r_arcmin'], n_kept)
             _log(msg)
@@ -612,7 +691,7 @@ def compute_list(name, spec):
     if brighter_neighbors_r_arcmin is not None:
         # can't supply DK_MAX here, since we'll miss some bright neighbors unless we set DK_MAX high enough that it's useless
         _log("for {} prune brighter neighbors in r {}".format(intermediate_list_path, brighter_neighbors_r_arcmin))
-        pruned_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True, must_check_gsc=False)
+        pruned_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, None, brighter_neighbors_r_arcmin, only_reject_brighter_neighbors=True, must_check_gsc=False, pretend=pretend)
         _log("Got {}".format(pruned_list_path))
         msg = "After excluding stars with brighter neighbors in r < {}: {} sources".format(brighter_neighbors_r_arcmin, n_kept)
         _log(msg)
@@ -620,13 +699,22 @@ def compute_list(name, spec):
     else:
         pruned_list_path = intermediate_list_path
 
-    if CVZ_ONLY:
-        dest_path = join('target_lists_cvz_only', name)
-        _report("CVZ only")
-    else:
-        dest_path = join('target_lists', name)
+    if elat_min is not None:
+        if elat_min == 85:
+            _report("|ecliptic lat| > {:} (CVZ)".format(elat_min))
+        else:
+            _report("|ecliptic lat| > {:}".format(elat_min))
+    #if CVZ_ONLY:
+    #    dest_path = join('target_lists_cvz_only', name)
+    #    _report("CVZ only")
+    #elif NEAR_CVZ_ONLY:
+    #    dest_path = join('target_lists_nearcvz_only', name)
+    #    _report("Near CVZ only (|ecliptic lat| > {:})".format(NEAR_CVZ_ELAT))
+    #else:
+    #    dest_path = join('target_lists', name)
+    dest_path = join(list_subdir, name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
-    if not PRETEND:
+    if not pretend:
         shutil.copy(pruned_list_path, dest_path)
 
     with open(dest_path + '.report', 'w') as f:
@@ -636,31 +724,27 @@ def compute_list(name, spec):
     return dest_path
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Build a list of stars meeting the provided isolation criteria, based on 2MASS and GSC2 catalog queries.")
+    parser.add_argument("category", type=str, help="Category of the target list to build; must be a key in the target_list dictionary specified in list_specs.py.")
+    parser.add_argument("--newfilepath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), help="Destination directory for new target lists.")
+    parser.add_argument("--nproc", type=int, help="Number of processor cores to assign to query workers.")
+    parser.add_argument("--nowrite", help="Do not write the new list file; only display the results.", action="store_true")
+
+    args = parser.parse_args()
+
     # Set up these shared/global variables
-    _pool = multiprocessing.Pool(N_PROCESSES)
+    if args.nproc:
+        _pool = multiprocessing.Pool(args.nproc)
+    else:
+        _pool = multiprocessing.Pool(multiprocessing.cpu_count()/2)
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
-    subprocess.call('mkdir -p ./cache ./target_lists ./target_lists_cvz_only', shell=True)
+    subprocess.call("mkdir -p ./cache {:s}".format(os.path.normpath(args.newfilepath)), shell=True)
 
-    # Without writing a full dependency solver, this should be enough to ensure
-    # that target lists sharing the same base mag criteria don't clobber
-    # each other when run with multiprocessing
-    # early_commissioning, global_alignment - both 4.5-5.5
-    compute_list('early_commissioning', target_lists['early_commissioning'])
-    # coarse_phasing, fine_phasing_routine_maintenance - both 8.5-9.5
-    compute_list('coarse_phasing', target_lists['coarse_phasing'])
+    assert args.category in target_lists, "The specified target category does not exist in the target_lists dictionary of list_specs.py."
+    list_subdir = join(os.path.normpath(args.newfilepath), args.category)
+    subprocess.call("mkdir -p {:s}".format(list_subdir), shell=True)
+    new_list_name = compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
 
-
-    # Now that intermediate lists are in place for those that conflict,
-    # do the rest all at once
-    rest_of_the_target_lists = {
-        'initial_image_mosaic': target_lists['initial_image_mosaic'],
-        'global_alignment': target_lists['global_alignment'],
-        'fine_phasing_routine_maintenance': target_lists['fine_phasing_routine_maintenance'],
-        # 'mimf_miri': target_lists['mimf_miri'],
-    }
-
-    for name, spec in rest_of_the_target_lists.items():
-        compute_list(name, spec)
     _pool.close()
     _pool.join()
