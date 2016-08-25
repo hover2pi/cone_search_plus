@@ -410,6 +410,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
     )
     avail_fname = os.path.join(subdir, "{:s}_avail.npy".format(catalog_name))
     np.save(avail_fname, availability)
+    print("Wrote availability table to {:s}".format(avail_fname))
 
     if not lite:
         fig = plt.figure(figsize=(14, 8))
