@@ -24,6 +24,9 @@ defined in a single file, and once the user modifies those specs, minimal
 interaction with script code is required to run the pipeline and regenerate the 
 full suite of target products.
 
+The initial release of the pipeline is built on code developed at Space 
+Telescope Science Institute by Jay Anderson, Joseph Long, and Neil Zimmerman.
+
 ///////////////////////////////////////////////////////////////////////////////
 Basic operation
 
