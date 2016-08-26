@@ -1,3 +1,28 @@
+This is the JWST OTE commissioning target selection pipeline. It is used to 
+identify point source calibrators for the various wavefront sensing & control 
+operations required to commission the Optical Telescope Element (OTE). Each 
+stage of OTE commissioning relies on the availability of a star of some 
+brightness and isolation specification. Ideally, on any given calendar date 
+there will be several target candidates meeting these criteria.
+
+The pipeline carries out all-sky catalog queries (2MASS and GSC2) to 
+derive preliminary lists of target candidates for each commissioning stage. 
+These preliminary lists are then screened and sorted based on the stars' 
+availability windows with respect to the JWST viewing zone, and properties 
+indexed in CDS/SIMBAD. Finally the pipeline generates several plot and list 
+products, so that the down-selected target candidates can be vetted further and 
+integrated into the observing proposal framework for commissioning activities.
+
+We expect that as WFS&C algorithms and procedures are refined and our 
+knowledge of the response and operation parameters of the scientific instruments 
+improve, the target criteria will change. Therefore, the pipeline was designed 
+to simplify the process of tweaking the target properties. All top-level target 
+criteria (brightness, isolation depth and radius, ecliptic latitude cutoff) are 
+defined in a single file, and once the user modifies those specs, minimal 
+interaction with script code is required to run the pipeline and regenerate the 
+full suite of target products.
+
+///////////////////////////////////////////////////////////////////////////////
 Basic operation
 
 The driver script, ote_target_tool_driver.py, is configured to loop through each
