@@ -417,7 +417,7 @@ if __name__ == "__main__":
     
     if N_targets_eN > 0:
         print('Reducing northern latitude list...')
-        reduc_targets_eN, reduc_status_eN = make_reduced_table_oldquerystyle(targets_eN, min_targets_per_day_hemi, max_reduc_length)
+        reduc_targets_eN, reduc_status_eN = make_reduced_table_oldquerystyle(targets_eN, min_targets_per_day_hemi, max_reduc_length/2)
         min_avail_reduc_eN = np.sum(reduc_targets_eN['avail'],axis=0).min()
         print("In the reduced northern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eN) 
     else:
@@ -426,7 +426,7 @@ if __name__ == "__main__":
     
     if N_targets_eS > 0:
         print('Reducing southern latitude list...')
-        reduc_targets_eS, reduc_status_eS = make_reduced_table_oldquerystyle(targets_eS, min_targets_per_day_hemi, max_reduc_length)
+        reduc_targets_eS, reduc_status_eS = make_reduced_table_oldquerystyle(targets_eS, min_targets_per_day_hemi, max_reduc_length/2)
         min_avail_reduc_eS = np.sum(reduc_targets_eS['avail'],axis=0).min()
         print("In the reduced southern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eS) 
     else:
