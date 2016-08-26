@@ -18,21 +18,21 @@ def run_ote_target_pipeline(category, new_file_path, all_cores=False, max_final_
         n_cores = multiprocessing.cpu_count()
     else:
         n_cores = multiprocessing.cpu_count()/2
-    subprocess.check_output(['python2', 'list_builder.py', category, '--newfilepath', new_file_path, '--ncores', str(n_cores)])
+    subprocess.check_output(['python2.7', 'list_builder.py', category, '--newfilepath', new_file_path, '--ncores', str(n_cores)])
     list_name = os.path.join(new_file_path, category, category)
     assert os.path.exists(list_name), 'Expected list_builder product does not exist.'
 
     #///////////////////////////////////////////
     # GET CALENDAR AVAILABILITY TABLE AND PLOT
     #///////////////////////////////////////////
-    subprocess.call(['python2', 'availability_checker.py', list_name, '--lite'])
+    subprocess.call(['python2.7', 'availability_checker.py', list_name, '--lite'])
     avail_name = os.path.join(new_file_path, category, '{:s}_avail.npy'.format(category))
     assert os.path.exists(avail_name), 'Expected availability_checker product does not exist.'
 
     #///////////////////////////////////////////
     # SORT, SCREEN, AND REDUCE TARGET LISTS
     #///////////////////////////////////////////
-    subprocess.call(['python2', 'sort_targets.py', list_name, avail_name,
+    subprocess.call(['python2.7', 'sort_targets.py', list_name, avail_name,
                      '--max_length', str(max_final_length),
                      '--min_per_day', str(min_per_day),
                      '--min_per_day_hemi', str(min_per_day_hemi)])
@@ -46,13 +46,13 @@ def run_ote_target_pipeline(category, new_file_path, all_cores=False, max_final_
     #///////////////////////////////////////////
     # GET CALENDAR AVAILABILITY OF REDUCED LIST
     #///////////////////////////////////////////
-    subprocess.call(['python2', 'availability_checker.py', list_name, reduc_list_name, '--lite'])
+    subprocess.call(['python2.7', 'availability_checker.py', list_name, reduc_list_name, '--lite'])
     
     #///////////////////////////////////////////
     # WRITE HTML GALLERY
     #///////////////////////////////////////////
     cutout_size = 2*float(target_lists[category]['neighbors'][0]['r_arcmin'])/60
-    subprocess.call(['python2', 'write_gallery.py', reduc_list_2mass_name, '{:.3f}'.format(cutout_size)])
+    subprocess.call(['python2.7', 'write_gallery.py', reduc_list_2mass_name, '{:.3f}'.format(cutout_size)])
 
 if __name__ == "__main__":
     assert "OTE_TARGETS" in os.environ, "Set the OTE_TARGETS shell variable to specify location of new target list products, otherwise provide an explicit path using the --newfilepath command line argument"

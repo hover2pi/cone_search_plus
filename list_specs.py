@@ -28,7 +28,8 @@ target_lists = {
         'k_mag': (8.5, 9.5),
         'neighbors': (
             {'delta_k': 5, 'r_arcmin': 3.0},
-        )
+        ),
+        'elat': 70
     },
 
     'fine_phasing': {
