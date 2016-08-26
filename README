@@ -1,7 +1,57 @@
-Neil Zimmerman
-January 20, 2016
+Basic operation
 
-Outline of steps to make a reduced list of commmissioning target candidates:
+The driver script, ote_target_tool_driver.py, is configured to loop through each
+step of the selection pipeline for each major target category. Once you've 
+followed the installation steps, then the full set of target list products,
+based on the existing criteria, can be produced by simply executing this driver 
+script from within the pipeline directory:
+
+cd $OTE_TARGETS_PIPELINE
+./ote_target_tool_driver.py
+
+The high-level target specifications are controlled by a nested dictionary in 
+list_specs.py, in terms of magnitude range, isolation delta mag, isolation 
+radius, and ecliptic latitude. For example, one dictionary describes the 
+criteria for the global alignment stage of OTE commissioning:
+
+    'global_alignment': {
+        'k_mag': (4.5, 5.5),
+        'neighbors': (
+            {'delta_k': 7, 'r_arcmin': 2.5},
+        ),
+        'elat': 85
+    },
+
+This dictionary tells the pipeline that these stars must fall in the 2MASS 
+K-band magnitude range 4.5 to 5.5, and that neighbors within a radius of 2.5 
+arcmin must be at least 7 magnitudes fainter. Furthermore, the optional 
+ecliptic latitude (elat) spec restricts the search to stars within 5 degrees of 
+the ecliptic poles, matching the continuous viewing zone of JWST.
+
+Description of pipeline products
+
+File organization
+
+By default, the target selection pipeline writes all products to a subdirectory 
+assigned its named based on the creation date and the OTE_TARGETS shell variable:
+$OTE_TARGETS/target_lists_20XX-XX-XX/ The date label is intended to ease the 
+task of archiving many iterations of target criteria, but it is otherwise left 
+to the user to keep track of product versions.
+
+The output files are split at the next directory level by target category, e.g.
+$OTE_TARGETS/target_lists_20XX-XX-XX/early_comm/,
+$OTE_TARGETS/target_lists_20XX-XX-XX/global_alignment/,
+...
+
+Files
+
+The names of the target pipeline products are entirely set by the category key 
+(global_alignment, for the example above). Modifications to the magnitude and 
+isolation parameters do not change the names of the target products. Therefore, 
+modifying target criteria and re-running the pipeline can overwrite existing 
+target products.
+
+Pipeline sub-components
 
 1. list_builder.py
     This produces one or many target lists, depending on the hard-coded options
@@ -23,13 +73,7 @@ Outline of steps to make a reduced list of commmissioning target candidates:
     minimum daily availability and ecliptic latitudes. (See header of this
     script for detailed description of the output products.)
     
-4. availability_checker.py
-    Run availability_checker again, this time with the reduced list from
-    sort_targets as a second argument, to generate a new sky plot and viewing
-    zone animation for the reduced target subset. The first argument must remain
-    the original, full list of target candidates from list_builder.
-    
-5. write_gallery.py
+4. write_gallery.py
     Generate an interactive html gallery of sky survey cutout images of each
     target in the reduced subset. The input argument is a list of 2MASS IDs,
     which sort_targets creates automatically for each reduced subset.
