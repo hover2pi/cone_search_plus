@@ -1,3 +1,4 @@
+#!/usr/bin/env python2.7
 # -*- coding: utf-8 -*-
 
 '''
@@ -514,7 +515,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         reduc_window_plot_fname = os.path.join(subdir, "{:s}_windows.png".format(reduc_catalog_name))
         plt.savefig(reduc_window_plot_fname, format='png')
         plt.clf()
-        print("Wrote availability and window plots to {:s}".format(reduc_plot_fname, reduc_window_plot_fname))
+        print("Wrote availability and window plots to {:s} and {:s}".format(reduc_plot_fname, reduc_window_plot_fname))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Show the availability of a list of targets in the JWST viewing zone over time.")
