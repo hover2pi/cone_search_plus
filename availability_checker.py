@@ -507,7 +507,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         plt.savefig(reduc_plot_fname, format='png')
         plt.clf()
         plt.figure(figsize=(8,6))
-        plt.imshow(np.array(availability[:,:xmax]).astype(float)*0.5, vmax=1, interpolation='nearest', cmap='Blues', aspect='auto')
+        plt.imshow(np.array(availability[:,:xmax]).astype(float)*0.5, vmin=0, vmax=1, interpolation='nearest', cmap='Blues', aspect='auto')
         N_stars = availability.shape[0]
         plt.yticks(np.arange(N_stars), (np.arange(N_stars)+1)[::-1])
         plt.xlabel('Days since {}'.format(commissioning_begins))
