@@ -18,6 +18,8 @@ def run_ote_target_pipeline(category, new_file_path, all_cores=False, max_final_
         n_cores = multiprocessing.cpu_count()
     else:
         n_cores = multiprocessing.cpu_count()/2
+    owd = os.getcwd()
+    os.chdir(os.path.normpath(os.environ['OTE_TARGETS_PIPELINE']))
     subprocess.check_output(['python2.7', 'list_builder.py', category, '--newfilepath', new_file_path, '--ncores', str(n_cores)])
     list_name = os.path.join(new_file_path, category, category)
     assert os.path.exists(list_name), 'Expected list_builder product does not exist.'
@@ -53,9 +55,11 @@ def run_ote_target_pipeline(category, new_file_path, all_cores=False, max_final_
     #///////////////////////////////////////////
     cutout_size = 2*float(target_lists[category]['neighbors'][0]['r_arcmin'])/60
     subprocess.call(['python2.7', 'write_gallery.py', reduc_list_2mass_name, '{:.3f}'.format(cutout_size)])
+    os.chdir(owd)
 
 if __name__ == "__main__":
     assert "OTE_TARGETS" in os.environ, "Set the OTE_TARGETS shell variable to specify location of new target list products, otherwise provide an explicit path using the --newfilepath command line argument"
+    assert "OTE_TARGETS_PIPELINE" in os.environ, "Set the OTE_TARGETS_PIPELINE shell variable to specify the path to the OTE target pipeline"
     parser = argparse.ArgumentParser(description="Top level driver script to produce lists of OTE commissioning target candidates.")
     parser.add_argument("--newfilepath", type=str,
                         default=os.path.join(os.path.normpath(os.environ["OTE_TARGETS"]),"target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d"))),
