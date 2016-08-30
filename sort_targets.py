@@ -379,9 +379,12 @@ if __name__ == "__main__":
         reduc_targets_twomass_fname = reduc_targets_fname + '_2MASS'
         reduc_targets_apt_fname = reduc_targets_fname + '_apt.csv'
         if not args.nowrite and args.writeall:
-            reduc_targets_full.write(reduc_targets_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_RADec.write(reduc_targets_RADec_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii', delimiter=',', overwrite=True)
+            #reduc_targets_full.write(reduc_targets_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_RADec.write(reduc_targets_RADec_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii', delimiter=',', overwrite=True)
+            reduc_targets_full.write(reduc_targets_fname, format='ascii.no_header')
+            reduc_targets_RADec.write(reduc_targets_RADec_fname, format='ascii.no_header')
+            reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii', delimiter=',')
             reduc_targets_twomass.tofile(reduc_targets_twomass_fname,sep="\n")
             print('Wrote all-latitude reduced target lists to\n%s,\n%s,\n%s,\n%s'%(reduc_targets_fname, reduc_targets_RADec_fname, reduc_targets_twomass_fname, reduc_targets_apt_fname))
     if reduc_status_eN:
@@ -396,8 +399,10 @@ if __name__ == "__main__":
         reduc_targets_eN_RADec_fname = reduc_targets_eN_fname + '_RADec'
         reduc_targets_eN_twomass_fname = reduc_targets_eN_fname + '_2MASS'
         if not args.nowrite and args.writeall:
-            reduc_targets_eN_full.write(reduc_targets_eN_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_eN_RADec.write(reduc_targets_eN_RADec_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_eN_full.write(reduc_targets_eN_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_eN_RADec.write(reduc_targets_eN_RADec_fname, format='ascii.no_header', overwrite=True)
+            reduc_targets_eN_full.write(reduc_targets_eN_fname, format='ascii.no_header')
+            reduc_targets_eN_RADec.write(reduc_targets_eN_RADec_fname, format='ascii.no_header')
             reduc_targets_eN_twomass.tofile(reduc_targets_eN_twomass_fname,sep="\n")
             print('Wrote northern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eN_fname, reduc_targets_eN_RADec_fname, reduc_targets_eN_twomass_fname))
     if reduc_status_eS:
@@ -412,8 +417,10 @@ if __name__ == "__main__":
         reduc_targets_eS_RADec_fname = reduc_targets_eS_fname + '_RADec'
         reduc_targets_eS_twomass_fname = reduc_targets_eS_fname + '_2MASS'
         if not args.nowrite and args.writeall:
-            reduc_targets_eS_full.write(reduc_targets_eS_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_eS_RADec.write(reduc_targets_eS_RADec_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_eS_full.write(reduc_targets_eS_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_eS_RADec.write(reduc_targets_eS_RADec_fname, format='ascii.no_header', overwrite=True)
+            reduc_targets_eS_full.write(reduc_targets_eS_fname, format='ascii.no_header')
+            reduc_targets_eS_RADec.write(reduc_targets_eS_RADec_fname, format='ascii.no_header')
             reduc_targets_eS_twomass.tofile(reduc_targets_eS_twomass_fname,sep="\n")
             print('Wrote southern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eS_fname, reduc_targets_eS_RADec_fname, reduc_targets_eS_twomass_fname))
     if reduc_status_eN and reduc_status_eS:
@@ -432,8 +439,11 @@ if __name__ == "__main__":
         reduc_targets_eNS_twomass_fname = reduc_targets_eNS_fname + '_2MASS'
         reduc_targets_eNS_apt_fname = reduc_targets_eNS_fname + '_apt.csv'
         if not args.nowrite:
-            reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header', overwrite=True)
-            reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',', overwrite=True)
+            #reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header', overwrite=True)
+            #reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',', overwrite=True)
+            reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header')
+            reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header')
+            reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',')
             reduc_targets_eNS_twomass.tofile(reduc_targets_eNS_twomass_fname,sep="\n")
             print('Wrote combined northern+southern reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eNS_fname, reduc_targets_eNS_RADec_fname, reduc_targets_eNS_twomass_fname))
