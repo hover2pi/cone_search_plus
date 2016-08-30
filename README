@@ -28,6 +28,57 @@ The initial release of the pipeline is built on code developed at Space
 Telescope Science Institute by Jay Anderson, Joseph Long, and Neil Zimmerman.
 
 ///////////////////////////////////////////////////////////////////////////////
+INSTALLATION
+
+1. Clone the code
+
+If you plan to contribute to the project software and sync changes to and from the GitLab server, you'll need to set up ssh key pair authentication as described at https://grit.stsci.edu/help/ssh/README.md.
+
+Once ssh authentication is established, you can clone the project from your command line:
+
+git clone git@grit.stsci.edu:ins-tel/ote_target_tool.git
+
+This will create a local directory ./ote_target_tool/ containing a copy of the project.
+2. Configure the 2MASS query tool
+
+Jay Anderson distilled the 2MASS Point Source Catalog into a database optimized for command line queries by coordinates and J/H/K magnitude. The official home of this file, BASE.DATA, is on central store in /grp/jwst/wit/query_2mass. Copies live on two of the Telescope group's servers, telserv1 and telserv2. Each of those servers has a solid state disk mounted at the root of the file system, named /ssdfast1. The BASE.DATA file lives on those disks to enable rapid reads and thereby minimize the time needed to complete a 2MASS catalog query.
+
+Because the tool used by the OTE target pipeline to interact with BASE.DATA, query_2mass, assumes the database is in the current directory, a file link to BASE.DATA must appear in the pipeline directory. This can be done with a symlink command from within the pipeline directory:
+
+ln -s /ssdfast1/BASE.DATA
+
+Next, compile the Fortran source code of Jay Anderson's 2MASS query tool, query_2mass.F:
+
+gfortran query_2mass.F -o query_2mass
+
+3. Configure shell variables
+
+A few shell variables must be configured by the user. If you're working on telserv1/telserv2, these should be defined in the ~/.login startup script in your home directory.
+
+OTE_TARGETS is the location where you want to store the target products. Unless a location is specified explicitly to the driver script (ote_targets_driver.py), the target selection pipeline will look for this variable in your shell environment and store all output files there.
+
+OTE_TARGETS_PIPELINE is the location of the target selection tool, most likely the same directory where you installed the project repository.
+Examples:
+tcsh
+
+setenv OTE_TARGETS $HOME/OTE_TARGETS
+setenv OTE_TARGETS_PIPELINE $HOME/ote_target_tool
+setenv PATH ${PATH}:${OTE_TARGETS_PIPELINE}
+bash
+
+export OTE_TARGETS=$HOME/OTE_TARGETS
+export OTE_TARGETS_PIPELINE=$HOME/ote_target_tool
+export PATH=${PATH}:${OTE_TARGETS_PIPELINE}
+4. Python dependencies
+
+The scripts use Python 2.7. The institute SSB python environment, invoked via the ssbrel command will suffice, with the addition of the public packages Requests and PyEphem.
+
+They both can be added via the pip tool:
+
+$ pip install requests  
+$ pip install pyephem
+
+///////////////////////////////////////////////////////////////////////////////
 Basic operation
 
 The driver script, ote_target_tool_driver.py, is configured to loop through each
