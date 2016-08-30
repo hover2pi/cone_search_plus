@@ -197,7 +197,7 @@ def chunk_list(base_list_path, chunk_size=CHUNK_SIZE, pretend=False):
         chunk.close()
     return chunk_paths
 
-def compute_base_list(k_min, k_max, spec, pretend=False):
+def compute_base_list(k_min, k_max, spec, target_path, pretend=False):
     """Simply query for stars in some magnitude range, optionally
     limiting the ecliptic latitude. The resulting file path is returned, and will
     be of the form `cache/base_<k_min>_k_<k_max>`"""
@@ -212,7 +212,7 @@ def compute_base_list(k_min, k_max, spec, pretend=False):
 #        base_list_name += "_cvz"
 #    elif NEAR_CVZ_ONLY:
 #        base_list_name += "_nearcvz"
-    base_list_path = join('cache', base_list_name)
+    base_list_path = join(target_path, 'cache', base_list_name)
     # build args list
     args = [
         './query_2mass',
@@ -491,20 +491,20 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     units of work."""
     # generate filename incorporating base list name
     radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
-    _, base_list_name = split(base_list_path)
+    cache_dir, base_list_name = split(base_list_path)
     if delta_k is not None:
         delta_k_string = '{:1.1f}'.format(delta_k)
         neighbor_list_name = 'neighbors_r_{}_dk_{}_for_{}'.format(radius_degrees_string, delta_k_string, base_list_name)
     else:
         delta_k_string = ''
         neighbor_list_name = 'neighbors_r_{}_for_{}'.format(radius_degrees_string, base_list_name)
-    neighbor_list_path = join('cache', neighbor_list_name)
+    #neighbor_list_path = join(cache_dir, neighbor_list_name)
     # _log("base name for neighbor search chunks {}".format(neighbor_list_name))
     
-    _, base_list_name = split(base_list_path)
+    #cache_dir, base_list_name = split(base_list_path)
     neighbor_list_name, _ = neighbor_list_name.split('_for_')
     output_list_name = '{}_without_{}'.format(base_list_name, neighbor_list_name)
-    output_list_path = join('cache', output_list_name)
+    output_list_path = join(cache_dir, output_list_name)
     if exists(output_list_path):
         return output_list_path, count_non_comment_lines(output_list_path, pretend=pretend)
 
@@ -634,7 +634,7 @@ def fix_idx_col(path, pretend=False):
         _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
     return path
 
-def compute_list(name, spec, list_subdir, pretend=False):
+def compute_list(name, spec, target_path, list_subdir, pretend=False):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
     target criteria that can be handled by this script
@@ -647,7 +647,7 @@ def compute_list(name, spec, list_subdir, pretend=False):
 
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
-    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, pretend=pretend)
+    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, target_path, pretend=pretend)
     elat_min = spec.get('elat')
     if elat_min is not None:
         # Replace idx column 'U' prefix with 'N'/'S' to maintain
@@ -681,7 +681,9 @@ def compute_list(name, spec, list_subdir, pretend=False):
                 _report(warning)
                 must_check_gsc = True
             _log("for {} prune neighbors deltaK < {} mag; r < {} arcmin".format(intermediate_list_path, nc['delta_k'], nc['r_arcmin']))
-            intermediate_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'], only_reject_brighter_neighbors=False, must_check_gsc=must_check_gsc, pretend=pretend)
+            intermediate_list_path, n_kept = find_stars_without_neighbors(intermediate_list_path, nc['delta_k'], nc['r_arcmin'],
+                                                                          only_reject_brighter_neighbors=False, 
+                                                                          must_check_gsc=must_check_gsc, pretend=pretend)
             _log("Got {}".format(intermediate_list_path))
             msg = "After excluding stars with neighbors in deltaK < {} mag; r < {} arcmin: {} sources".format(nc['delta_k'], nc['r_arcmin'], n_kept)
             _log(msg)
@@ -712,6 +714,7 @@ def compute_list(name, spec, list_subdir, pretend=False):
     #    _report("Near CVZ only (|ecliptic lat| > {:})".format(NEAR_CVZ_ELAT))
     #else:
     #    dest_path = join('target_lists', name)
+    #list_subdir = join(newfilepath, args.category)
     dest_path = join(list_subdir, name)
     _log("cp {} {}".format(pruned_list_path, dest_path))
     if not pretend:
@@ -726,7 +729,9 @@ def compute_list(name, spec, list_subdir, pretend=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build a list of stars meeting the provided isolation criteria, based on 2MASS and GSC2 catalog queries.")
     parser.add_argument("category", type=str, help="Category of the target list to build; must be a key in the target_list dictionary specified in list_specs.py.")
-    parser.add_argument("--newfilepath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), help="Destination directory for new target lists.")
+    parser.add_argument("--targetfilepath", type=str, default=os.path.normpath("."), help="Base directory for target pipeline products.")
+    parser.add_argument("--newfilepath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), 
+                        help="Destination directory for new target lists.")
     parser.add_argument("--ncores", type=int, help="Number of processor cores to assign to query workers.")
     parser.add_argument("--nowrite", help="Do not write the new list file; only display the results.", action="store_true")
 
@@ -739,12 +744,15 @@ if __name__ == "__main__":
         _pool = multiprocessing.Pool(multiprocessing.cpu_count()/2)
     _manager = multiprocessing.Manager()
     # Make sure destination directories exist
-    subprocess.call("mkdir -p ./cache {:s}".format(os.path.normpath(args.newfilepath)), shell=True)
+    subprocess.call("mkdir -p {:s} {:s}".format(
+                    os.path.normpath(args.newfilepath),
+                    os.path.join(os.path.normpath(args.targetfilepath), 'cache')),
+                    shell=True)
 
     assert args.category in target_lists, "The specified target category does not exist in the target_lists dictionary of list_specs.py."
     list_subdir = join(os.path.normpath(args.newfilepath), args.category)
     subprocess.call("mkdir -p {:s}".format(list_subdir), shell=True)
-    new_list_name = compute_list(args.category, target_lists[args.category], list_subdir, pretend=args.nowrite)
+    new_list_name = compute_list(args.category, target_lists[args.category], args.targetfilepath, list_subdir, pretend=args.nowrite)
 
     _pool.close()
     _pool.join()
