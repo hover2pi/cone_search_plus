@@ -80,7 +80,7 @@ import subprocess
 import requests
 import urllib
 import astropy.io.votable
-import astroquery.simbad
+#import astroquery.simbad
 import StringIO
 import pdb
 import argparse
@@ -92,25 +92,7 @@ def equatorial_deg_to_ecliptic_deg(ra, dec):
     ec = ephem.Ecliptic(eq)
     return ec.lon / ephem.degree, ec.lat / ephem.degree
 
-def get_irsa_2massID(target_row):
-# This is for one object only. For multiple coordinate queries, you need to build a curl command to upload a table.
-    base_irsa_url = "http://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query?outfmt=3&spatial=Cone&radius=1&catalog=fp_psc&objstr="
-    irsa_url = base_irsa_url + "%f+%+f"%(target_row['RA'], target_row['Dec'])
-#    base_irsa_url = "http://irsa.ipac.caltech.edu/SCS?table=fp_psc&SR=0.02&format=votable&"
-#    irsa_url = base_irsa_url + "RA=%f&DEC=%+f"%(target_row['RA'], target_row['Dec'])
-    print irsa_url
-    irsa_result = requests.get(irsa_url)
-    irsa_table = astropy.io.votable.parse_single_table( StringIO.StringIO(irsa_result.text), columns=['designation','k_m'] )
-    twomass_ID = None
-    for irsa_row in irsa_table.array:
-        if irsa_row['k_m']- target_row['K'] <= 0.01:
-            twomass_ID = "2MASS J%s"%(irsa_row['designation'])
-            break
-    if twomass_ID is None:
-        print("WARNING: no IRSA 2MASS PSC hit for RA Dec = %f %f and Kmag = %.2f"%(in_table['RA'][rr],in_table['Dec'][rr],in_table['K'][rr]))
-    return twomass_ID
-
-def make_reduced_table_oldquerystyle(in_table, daily_min, max_length):
+def make_reduced_table(in_table, daily_min, max_length):
     basesimbadurl = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
     #basesimbadurl = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
     basesimbadurl = basesimbadurl + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
@@ -170,59 +152,6 @@ def make_reduced_table_oldquerystyle(in_table, daily_min, max_length):
                 else:
                     print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
             else: # No SIMBAD entry, but assume ok
-                reduc_table.add_row(in_table[rr])
-            rr = rr + 1
-        if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
-            print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
-            if len(reduc_table) < max_length:
-                print('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
-                      (N_cand, max_length, len(reduc_table)))
-            elif np.sum(reduc_table['avail'],axis=0).min() < daily_min and len(reduc_table) == max_length:
-                print('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
-        else:
-            print('    Reduction was successful.')
-        reduc_table.sort(keys='eb')
-        reduc_table.reverse()
-        reduc_status = True
-    return reduc_table, reduc_status
-
-def make_reduced_table(in_table, daily_min, max_length):
-    reduc_status = False
-    customSimbad = astroquery.simbad.Simbad()
-    customSimbad.add_votable_fields('otype(N)')
-    N_cand = len(in_table)
-    max_length = np.min([N_cand, max_length])
-    rr = 0
-    while rr < N_cand:
-        simbad_result = customSimbad.query_object(in_table['2MASS'][rr])
-        if simbad_result is not None:
-            otype_part2 = int(simbad_result['OTYPE_N'][0].split('.')[1])
-            if otype_part2 != 13:
-                reduc_table = Table(in_table[rr])
-                rr = rr + 1
-                break
-            else:
-                print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%(in_table['2MASS'][rr], simbad_result['OTYPE_N'][0])
-        else:
-            reduc_table = Table(in_table[rr])
-            rr = rr + 1
-            break
-        rr = rr + 1
-    try:
-        reduc_table
-    except NameError:
-        print('    WARNING: No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
-    else:
-        while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
-            simbad_result = customSimbad.query_object(in_table['2MASS'][rr])
-            if simbad_result is not None:
-                #print simbad_result['MAIN_ID','OTYPE_N']
-                otype_part2 = int(simbad_result['OTYPE_N'][0].split('.')[1])
-                if otype_part2 != 13:
-                    reduc_table.add_row(in_table[rr])
-                else:
-                    print 'Rejecting %s, object type code %s from reduced list due to multiplicity classification in SIMBAD'%(in_table['2MASS'][rr], simbad_result['OTYPE_N'][0])
-            else:
                 reduc_table.add_row(in_table[rr])
             rr = rr + 1
         if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
@@ -413,13 +342,13 @@ if __name__ == "__main__":
     #base_simbad_url = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
     
     print('Reducing all-latitude list...')
-    reduc_targets, reduc_status = make_reduced_table_oldquerystyle(targets, min_targets_per_day, max_reduc_length)
+    reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, max_reduc_length)
     min_avail_reduc_all = np.sum(reduc_targets['avail'],axis=0).min()
     print("In the reduced all-latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_all) 
     
     if N_targets_eN > 0:
         print('Reducing northern latitude list...')
-        reduc_targets_eN, reduc_status_eN = make_reduced_table_oldquerystyle(targets_eN, min_targets_per_day_hemi, max_reduc_length/2)
+        reduc_targets_eN, reduc_status_eN = make_reduced_table(targets_eN, min_targets_per_day_hemi, max_reduc_length/2)
         min_avail_reduc_eN = np.sum(reduc_targets_eN['avail'],axis=0).min()
         print("In the reduced northern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eN) 
     else:
@@ -428,7 +357,7 @@ if __name__ == "__main__":
     
     if N_targets_eS > 0:
         print('Reducing southern latitude list...')
-        reduc_targets_eS, reduc_status_eS = make_reduced_table_oldquerystyle(targets_eS, min_targets_per_day_hemi, max_reduc_length/2)
+        reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_per_day_hemi, max_reduc_length/2)
         min_avail_reduc_eS = np.sum(reduc_targets_eS['avail'],axis=0).min()
         print("In the reduced southern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eS) 
     else:
