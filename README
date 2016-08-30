@@ -156,27 +156,26 @@ isolation parameters do not change the names of the target products. Therefore,
 modifying target criteria and re-running the pipeline can overwrite existing 
 target products.
 
-Pipeline sub-components
+Pipeline component procedures
 
 1. list_builder.py
-    This produces one or many target lists, depending on the hard-coded options
-    in main. It takes no arguments, but directly reads the selection criteria
-    defined in list_specs.py.
+    This queries the 2MASS catalog (and GSC2, depending on magnitude range) to 
+    identify a list of candidate stars with matching magnitude range and 
+    isolation.
     
 2. availability_checker.py
-   Takes one of the target lists produced by list_builder as a command-line 
-   argument.
-   Plots the targets on the ecliptic sphere and animates the JWST viewing zone
-   over a range of calendar dates. Stores the result as an mpeg or mp4 video.
-   Makes a boolean table of availability of each target as a function of
-   calendar date, stores as a numpy (.npy) file.
+   Takes one of the target lists produced by list_builder as an argument and 
+   produces plots to illustrate the availabilty of the target candidates with 
+   respect to the JWST viewing zone over time, along with a boolean table of 
+   availability of each target as a function of calendar date, stored as a numpy
+   (.npy) file.
    
 3. sort_targets.py
-    Takes two command-line arguments: (1) A target list file from list_builder,
+    Takes as input: (1) a target list file from list_builder,
     and (2) the daily availibility .npy file from availability_checker.
-    Writes tables of reduced subsets of targets meeting various criteria for
-    minimum daily availability and ecliptic latitudes. (See header of this
-    script for detailed description of the output products.)
+    Writes a table of down-selected subsets of targets meeting some minimum 
+    number of total daily avaialbility per ecliptic hemisphere and/or maximum 
+    final list length, prioritizing based on proximity to the ecliptic poles.
     
 4. write_gallery.py
     Generate an interactive html gallery of sky survey cutout images of each
