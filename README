@@ -30,11 +30,11 @@ Telescope Science Institute by Jay Anderson, Joseph Long, and Neil Zimmerman.
 ///////////////////////////////////////////////////////////////////////////////
 INSTALLATION
 
-1. Clone the code
+1. Clone the project code
 
-If you plan to contribute to the project software and sync changes to and from
-the GitLab server, you'll need to set up ssh key pair authentication as
-described at https://grit.stsci.edu/help/ssh/README.md.
+If you plan to contribute to this project and sync changes to and from the
+GitLab server, you'll need to set up ssh key pair authentication as described
+at https://grit.stsci.edu/help/ssh/README.md.
 
 Once ssh authentication is established, you can clone the project from your
 command line:
@@ -56,7 +56,7 @@ a location is specified explicitly to the driver script
 variable in your shell environment and store all output files there.
 
 OTE_TARGETS_PIPELINE is the location of the target selection tool, most likely
-the same directory where you installed the project repository.
+the same directory where you cloned the project code.
 
 export OTE_TARGETS=$HOME/OTE_TARGETS  
 export OTE_TARGETS_PIPELINE=$HOME/ote_target_tool  
@@ -96,6 +96,7 @@ standard conda install command:
 
 $ conda install requests  
 $ conda install ephem
+
 
 ///////////////////////////////////////////////////////////////////////////////
 Basic operation
