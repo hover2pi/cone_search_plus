@@ -9,6 +9,7 @@ import pdb
 import shutil
 import numpy as np
 import requests
+import astropy.table
 from astropy.io import ascii
 from astropy.table import Table
 from scipy.interpolate import interp1d
@@ -609,6 +610,20 @@ def remove_non_AAA_sources(path, pretend=False):
     n_kept = n_base_stars - n_pruned
     return outpath, n_kept
 
+def remove_duplicates(path):
+    base_list = Table.read(path, format='ascii.fixed_width_no_header',
+                           data_start=0, col_starts=(0, 52))
+    unique_base_list = astropy.table.unique(base_list, keys=['col1'])
+    unique_base_list.sort(keys=['col2'])
+    pad_space_list = ['  ']*len(unique_base_list)
+    pad_col1 = Table.Column(pad_space_list, 'pad1')
+    pad_col2 = Table.Column(pad_space_list, 'pad2')
+    unique_base_list.add_column(pad_col1, index=0)
+    unique_base_list.add_column(pad_col2, index=2)
+    unique_base_list.write(path, format='ascii.fixed_width_no_header',
+                           bookend=False, delimiter='', delimiter_pad='')
+    return len(unique_base_list)
+
 def fix_idx_col(path, pretend=False):
     """When we have combined separate (North and South) queries, modify
     the "idx" identifiers based on Declination so that they are unique:
@@ -648,6 +663,7 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
     _log("Computing {} from {}".format(name, pformat(spec)))
     k_min, k_max = spec['k_mag']
     base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, target_path, pretend=pretend)
+    n_base_unique = remove_duplicates(base_list_path)
     elat_min = spec.get('elat')
     if elat_min is not None:
         # Replace idx column 'U' prefix with 'N'/'S' to maintain
@@ -655,6 +671,9 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
         fix_idx_col(base_list_path, pretend=pretend)
 
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
+    _log(msg)
+    _report(msg)
+    msg = "After removing duplicate entries: {}".format(n_base_unique)
     _log(msg)
     _report(msg)
     if name.startswith('initial_image_mosaic') == False and name.startswith('early_comm') == False:
