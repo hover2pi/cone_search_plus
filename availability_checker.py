@@ -66,6 +66,7 @@ from astropy.io import ascii
 import ephem
 import pdb
 import argparse
+import logging
 
 def read_commstars(filename):
     """Read in a text table with columns for RA, Dec, J, H, K mag,
@@ -411,7 +412,7 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
     )
     avail_fname = os.path.join(subdir, "{:s}_avail.npy".format(catalog_name))
     np.save(avail_fname, availability)
-    print("Wrote availability table to {:s}".format(avail_fname))
+    logging.info("Wrote availability table to {:s}".format(avail_fname))
 
     if not lite:
         fig = plt.figure(figsize=(14, 8))
@@ -456,11 +457,11 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
     plt.ylim([0, np.max(np.sum(availability[:,:xmax], axis=0))+1])
     plot_fname = os.path.join(subdir, "{:s}_avail.png".format(catalog_name))
     plt.savefig(plot_fname, format='png')
-    print("Wrote availability plot to {:s}".format(plot_fname))
+    logging.info("Wrote availability plot to {:s}".format(plot_fname))
     plt.clf()
 
     if reduc_catalog is not None:
-        print(reduc_catalog)
+        logging.info(reduc_catalog)
         suns, availability = precompute_availability(
             reduc_catalog,
             commissioning_begins,
@@ -515,14 +516,22 @@ def analyze_catalog(catalog_path, reduc_catalog_path, kind='jay', lite=False,
         reduc_window_plot_fname = os.path.join(subdir, "{:s}_windows.png".format(reduc_catalog_name))
         plt.savefig(reduc_window_plot_fname, format='png')
         plt.clf()
-        print("Wrote availability and window plots to {:s} and {:s}".format(reduc_plot_fname, reduc_window_plot_fname))
+        logging.info("Wrote availability and window plots to {:s} and {:s}".format(reduc_plot_fname, reduc_window_plot_fname))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Show the availability of a list of targets in the JWST viewing zone over time.")
+    parser.add_argument("--logfilepath", type=str, default=None, help="Log file name")
     parser.add_argument("--lite", help="Skip the animation; only produce a static availability vs time plot", action="store_true")
     parser.add_argument("targets", nargs='+', help="1 or 2 target list files. The second, optional list is a down-selected version.")
 
     args = parser.parse_args()
+
+    if args.logfilepath is None:
+        log_fname = os.path.join( os.path.abspath(os.path.join(os.path.dirname(args.targets[0]), '..')),
+                                  "ote_targets_{:s}.log".format(datetime.datetime.now().strftime("%Y-%m-%d")) )
+    else:
+        log_fname = args.logfilepath
+    logging.basicConfig(filename=log_fname, level=logging.DEBUG, filemode='a')
 
     jwst_launch = datetime.datetime(2018, 10, 1)
 
@@ -534,4 +543,4 @@ if __name__ == "__main__":
         assert os.path.exists(args.targets[1]), "Second input target list does not exist."
         analyze_catalog(args.targets[0], args.targets[1], kind='not', lite=args.lite, launch_date=jwst_launch)
     else:
-        print("Too many target list inputs: {}, must specify either one or two files".format(args.targets))
+        logging.error("Too many target list inputs: {}, must specify either one or two files".format(args.targets))

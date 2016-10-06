@@ -84,6 +84,7 @@ import astropy.io.votable
 import StringIO
 import pdb
 import argparse
+import logging
 
 def equatorial_deg_to_ecliptic_deg(ra, dec):
     """Convert RA and declination as decimal degrees to
@@ -97,6 +98,10 @@ def make_reduced_table(in_table, daily_min, max_length):
     #basesimbadurl = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
     basesimbadurl = basesimbadurl + "format%20object%20%22%25IDLIST%28A;1,NAME,2MASS,HD,HIP,GSC%29%20|%25OTYPELIST%20|%20%25FLUXLIST%28K;F%29%22"
     basesimbadurl = basesimbadurl + "%0Aoutput%20console=off%20script=off%0Aquery%20id%20"
+   
+    requests_log = logging.getLogger("requests.packages.urllib3")
+    requests_log.setLevel(logging.WARNING)
+
     reduc_status = False
     N_cand = len(in_table)
     rr = 0
@@ -112,7 +117,7 @@ def make_reduced_table(in_table, daily_min, max_length):
                 targetline = line
                 break
             elif 'not found' in line:
-                print("WARNING: no SIMBAD match for %s"%(in_table['2MASS'][rr]))
+                logging.info("No SIMBAD match for %s"%(in_table['2MASS'][rr]))
                 break
         if targetline:
             otype = targetline.split('|')[1]
@@ -121,7 +126,7 @@ def make_reduced_table(in_table, daily_min, max_length):
                 rr = rr + 1
                 break
             else:
-                print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+                logging.info('Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype))
         else: # No SIMBAD entry, but assume ok
             reduc_table = Table(in_table[rr])
             rr = rr + 1
@@ -130,7 +135,7 @@ def make_reduced_table(in_table, daily_min, max_length):
     try:
         reduc_table
     except NameError:
-        print('    WARNING: No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
+        logging.warning('    No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
     else:
         while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
             simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
@@ -143,26 +148,26 @@ def make_reduced_table(in_table, daily_min, max_length):
                     targetline = line
                     break
                 elif 'not found' in line:
-                    print("WARNING: no SIMBAD match for %s"%(in_table['2MASS'][rr]))
+                    logging.info("No SIMBAD match for %s"%(in_table['2MASS'][rr]))
                     break
             if targetline:
                 otype = targetline.split('|')[1]
                 if '**' not in otype:
                     reduc_table.add_row(in_table[rr])
                 else:
-                    print 'Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype)
+                    logging.info('Rejecting %s %s from reduced list due to double star classification in SIMBAD'%(in_table['2MASS'][rr],otype))
             else: # No SIMBAD entry, but assume ok
                 reduc_table.add_row(in_table[rr])
             rr = rr + 1
         if np.sum(reduc_table['avail'],axis=0).min() < daily_min:
-            print('    WARNING: Could not reduce this list while satisfying >= %d targets per day.' % (daily_min)) 
+            logging.info('    Could not reduce this list while satisfying >= %d targets per day.' % (daily_min))
             if len(reduc_table) < max_length:
-                print('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
+                logging.info('    Reached end of %d-star candidate list before filling up to max allowed list length of %d stars; incomplete result has %d stars' %\
                       (N_cand, max_length, len(reduc_table)))
             elif np.sum(reduc_table['avail'],axis=0).min() < daily_min and len(reduc_table) == max_length:
-                print('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
+                logging.info('    Incomplete reduced list filled up to max allowed length of %d stars.' % (max_length))
         else:
-            print('    Reduction was successful.')
+            logging.info('    Reduction was successful.')
         reduc_table.sort(keys='eb')
         reduc_table.reverse()
         reduc_status = True
@@ -174,11 +179,21 @@ if __name__ == "__main__":
     parser.add_argument("--writeall", help="Write all variants of reduced lists, per hemisphere and full sphere.", action="store_true")
     parser.add_argument("targets", help="Target list file, produced by list_builder script.")
     parser.add_argument("availability", help="Availability table, produced by availability_checker script.")
+    parser.add_argument("--logfilepath", type=str, default=None, help="Log file name")
     parser.add_argument("--max_length", type=int, help="Maximum length of reduced lists", default=10)
     parser.add_argument("--min_per_day", type=int, help="Goal for minimum number of observable stars on any given calendar day", default=3)
     parser.add_argument("--min_per_day_hemi", type=int, help="Goal for minimum number of observable stars per ecliptic hemisphere on any given calendar day", default=3)
 
     args = parser.parse_args()
+
+    if args.logfilepath is None:
+        log_fname = os.path.join( os.path.abspath(os.path.join(os.path.dirname(args.targets), '..')),
+                                  "ote_targets_{:s}.log".format(datetime.datetime.now().strftime("%Y-%m-%d")) )
+    else:
+        log_fname = args.logfilepath
+    logging.basicConfig(filename=log_fname, level=logging.DEBUG)
+    logger = logging.getLogger()
+    logger.handlers[0].flush()
     
     targets_fname = args.targets
     avail_fname = args.availability
@@ -231,7 +246,7 @@ if __name__ == "__main__":
         eb.append(b)
     
     twomass_IDs = []
-    print("Retrieving 2MASS Point Source Catalog IDs from IPAC IRSA...")
+    logging.info("Retrieving 2MASS Point Source Catalog IDs from IPAC IRSA...")
     irsa_query_vot = astropy.io.votable.tree.VOTableFile()
     resource = astropy.io.votable.tree.Resource()
     irsa_query_vot.resources.append(resource)
@@ -251,7 +266,8 @@ if __name__ == "__main__":
     irsa_search_rad = 1./3600 # in degree units
     #curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad)
     curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation,fp_psc.ra,fp_psc.dec FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad)
-    print curl_cmd
+    #curl_cmd = "curl -o \"%s\" -F \"UPLOAD=my_table,param:table\" -F \"table=@%s\" -F \"QUERY=SELECT fp_psc.designation,fp_psc.ra,fp_psc.dec FROM fp_psc WHERE CONTAINS(POINT(\'J2000\',ra,dec), CIRCLE(\'J2000\',TAP_UPLOAD.my_table.ra, TAP_UPLOAD.my_table.dec, %.5f))=1\" http://irsa.ipac.caltech.edu/TAP/sync >> %s" % (irsa_response_vot_fname, irsa_query_vot_fname, irsa_search_rad, log_fname)
+    logging.info(curl_cmd)
     subprocess.call(curl_cmd, shell=True)
     
     #irsa_response_vot = astropy.io.votable.parse_single_table( irsa_response_vot_fname, columns=['designation'] )
@@ -276,7 +292,7 @@ if __name__ == "__main__":
     for rr, row in enumerate(targets):
         if row['2MASS'] in black_list:
             targets.remove_row(rr)
-            print "Removed externally flagged star %s from candidate list"%(row['2MASS'])
+            logging.info("Removed externally flagged star %s from candidate list"%(row['2MASS']))
     
     targets_eN = targets[targets['eb'] >= 0]
     targets_eS = targets[targets['eb'] < 0]
@@ -333,40 +349,40 @@ if __name__ == "__main__":
     min_avail_eS = np.sum(targets_eS['avail'],axis=0).min()
     min_avail_eN = np.sum(targets_eN['avail'],axis=0).min()
     
-    print("Starting from a list of %d candidate stars." % N_targets_full)
-    print("On any day of the year, at least %d candidates are available at all ecliptic latitudes." % min_avail_all)
-    print("On any day of the year, at least %d candidates are available in the northern ecliptic hemisphere." % min_avail_eN)
-    print("On any day of the year, at least %d candidates are available in the southern ecliptic hemisphere." % min_avail_eS)
+    logging.info("Starting from a list of %d candidate stars." % N_targets_full)
+    logging.info("On any day of the year, at least %d candidates are available at all ecliptic latitudes." % min_avail_all)
+    logging.info("On any day of the year, at least %d candidates are available in the northern ecliptic hemisphere." % min_avail_eN)
+    logging.info("On any day of the year, at least %d candidates are available in the southern ecliptic hemisphere." % min_avail_eS)
     
     base_simbad_url = "http://simbad.u-strasbg.fr/simbad/sim-script?script="
     #base_simbad_url = "http://simbad.cfa.harvard.edu/simbad/sim-script?script="
     
-    print('Reducing all-latitude list...')
+    logging.info('Reducing all-latitude list...')
     reduc_targets, reduc_status = make_reduced_table(targets, min_targets_per_day, max_reduc_length)
     min_avail_reduc_all = np.sum(reduc_targets['avail'],axis=0).min()
-    print("In the reduced all-latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_all) 
+    logging.info("In the reduced all-latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_all) 
     
     if N_targets_eN > 0:
-        print('Reducing northern latitude list...')
+        logging.info('Reducing northern latitude list...')
         reduc_targets_eN, reduc_status_eN = make_reduced_table(targets_eN, min_targets_per_day_hemi, max_reduc_length/2)
         min_avail_reduc_eN = np.sum(reduc_targets_eN['avail'],axis=0).min()
-        print("In the reduced northern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eN) 
+        logging.info("In the reduced northern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eN) 
     else:
         reduc_targets_eN = None
         reduc_status_eN = False
     
     if N_targets_eS > 0:
-        print('Reducing southern latitude list...')
+        logging.info('Reducing southern latitude list...')
         reduc_targets_eS, reduc_status_eS = make_reduced_table(targets_eS, min_targets_per_day_hemi, max_reduc_length/2)
         min_avail_reduc_eS = np.sum(reduc_targets_eS['avail'],axis=0).min()
-        print("In the reduced southern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eS) 
+        logging.info("In the reduced southern latitude list, on any day of the year, at least %d candidates are available." % min_avail_reduc_eS) 
     else:
         reduc_targets_eS = None
         reduc_status_eS = False
     
     if reduc_status:
-        print('\nReduced list, all latitudes (%d stars for min daily avail. %d stars)'%(len(reduc_targets),min_targets_per_day))
-        print reduc_targets
+        logging.info('\nReduced list, all latitudes (%d stars for min daily avail. %d stars)'%(len(reduc_targets),min_targets_per_day))
+        logging.info(reduc_targets)
         reduc_targets_full = reduc_targets['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
         reduc_targets_RADec = reduc_targets['RA', 'Dec']
         reduc_targets_twomass = reduc_targets['2MASS']
@@ -386,10 +402,10 @@ if __name__ == "__main__":
             reduc_targets_RADec.write(reduc_targets_RADec_fname, format='ascii.no_header')
             reduc_targets_apt.write(reduc_targets_apt_fname, format='ascii', delimiter=',')
             reduc_targets_twomass.tofile(reduc_targets_twomass_fname,sep="\n")
-            print('Wrote all-latitude reduced target lists to\n%s,\n%s,\n%s,\n%s'%(reduc_targets_fname, reduc_targets_RADec_fname, reduc_targets_twomass_fname, reduc_targets_apt_fname))
+            logging.info('Wrote all-latitude reduced target lists to\n%s,\n%s,\n%s,\n%s'%(reduc_targets_fname, reduc_targets_RADec_fname, reduc_targets_twomass_fname, reduc_targets_apt_fname))
     if reduc_status_eN:
-        print('\nReduced list, northern latitudes (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eN),min_targets_per_day_hemi))
-        print reduc_targets_eN
+        logging.info('\nReduced list, northern latitudes (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eN),min_targets_per_day_hemi))
+        logging.info(reduc_targets_eN)
         reduc_targets_eN_full = reduc_targets_eN['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
         reduc_targets_eN_RADec = reduc_targets_eN['RA', 'Dec']
         reduc_targets_eN_twomass = reduc_targets_eN['2MASS']
@@ -404,10 +420,10 @@ if __name__ == "__main__":
             reduc_targets_eN_full.write(reduc_targets_eN_fname, format='ascii.no_header')
             reduc_targets_eN_RADec.write(reduc_targets_eN_RADec_fname, format='ascii.no_header')
             reduc_targets_eN_twomass.tofile(reduc_targets_eN_twomass_fname,sep="\n")
-            print('Wrote northern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eN_fname, reduc_targets_eN_RADec_fname, reduc_targets_eN_twomass_fname))
+            logging.info('Wrote northern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eN_fname, reduc_targets_eN_RADec_fname, reduc_targets_eN_twomass_fname))
     if reduc_status_eS:
-        print ('\nReduced list, southern latitudes (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eS),min_targets_per_day_hemi))
-        print reduc_targets_eS
+        logging.info('\nReduced list, southern latitudes (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eS),min_targets_per_day_hemi))
+        logging.info(reduc_targets_eS)
         reduc_targets_eS_full = reduc_targets_eS['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
         reduc_targets_eS_RADec = reduc_targets_eS['RA', 'Dec']
         reduc_targets_eS_twomass = reduc_targets_eS['2MASS']
@@ -422,11 +438,11 @@ if __name__ == "__main__":
             reduc_targets_eS_full.write(reduc_targets_eS_fname, format='ascii.no_header')
             reduc_targets_eS_RADec.write(reduc_targets_eS_RADec_fname, format='ascii.no_header')
             reduc_targets_eS_twomass.tofile(reduc_targets_eS_twomass_fname,sep="\n")
-            print('Wrote southern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eS_fname, reduc_targets_eS_RADec_fname, reduc_targets_eS_twomass_fname))
+            logging.info('Wrote southern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eS_fname, reduc_targets_eS_RADec_fname, reduc_targets_eS_twomass_fname))
     if reduc_status_eN and reduc_status_eS:
         reduc_targets_eNS = vstack([reduc_targets_eN, reduc_targets_eS])
-        print ('\nReduced list, combined northern+southern (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eNS),min_targets_per_day_hemi))
-        print reduc_targets_eNS
+        logging.info('\nReduced list, combined northern+southern (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eNS),min_targets_per_day_hemi))
+        logging.info(reduc_targets_eNS)
         reduc_targets_eNS_full = reduc_targets_eNS['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
         reduc_targets_eNS_RADec = reduc_targets_eNS['RA', 'Dec']
         reduc_targets_eNS_twomass = reduc_targets_eNS['2MASS']
@@ -445,5 +461,7 @@ if __name__ == "__main__":
             reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header')
             reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header')
             reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',')
-            reduc_targets_eNS_twomass.tofile(reduc_targets_eNS_twomass_fname,sep="\n")
-            print('Wrote combined northern+southern reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eNS_fname, reduc_targets_eNS_RADec_fname, reduc_targets_eNS_twomass_fname))
+            with open(reduc_targets_eNS_twomass_fname, mode='wt') as twomass_list_file:
+                twomass_list_file.write('\n'.join(reduc_targets_eNS_twomass))
+                twomass_list_file.write('\n')
+            logging.info('Wrote combined northern+southern reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eNS_fname, reduc_targets_eNS_RADec_fname, reduc_targets_eNS_twomass_fname))

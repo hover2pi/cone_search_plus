@@ -5,6 +5,7 @@ import os
 import datetime
 import multiprocessing
 import subprocess
+import logging
 import pdb
 import shutil
 import numpy as np
@@ -751,10 +752,19 @@ if __name__ == "__main__":
     parser.add_argument("--targetfilepath", type=str, default=os.path.normpath("."), help="Base directory for target pipeline products.")
     parser.add_argument("--newfilepath", type=str, default="target_lists_{:s}".format(datetime.datetime.now().strftime("%Y-%m-%d")), 
                         help="Destination directory for new target lists.")
+    parser.add_argument("--logfilepath", type=str, default=None, help="Log file name")
     parser.add_argument("--ncores", type=int, help="Number of processor cores to assign to query workers.")
     parser.add_argument("--nowrite", help="Do not write the new list file; only display the results.", action="store_true")
 
     args = parser.parse_args()
+
+    if args.logfilepath is None:
+        log_fname = os.path.join( args.targetfilepath,
+                                  "ote_targets_{:s}.log".format(datetime.datetime.now().strftime("%Y-%m-%d")) )
+    else:
+        log_fname = args.logfilepath
+    logging.basicConfig(filename=log_fname, level=logging.DEBUG, filemode='a')
+    logger = logging.getLogger()
 
     # Set up these shared/global variables
     if args.ncores:
