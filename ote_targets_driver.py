@@ -13,15 +13,12 @@ from list_specs import target_lists
 
 def run_ote_target_pipeline(category, target_file_path, new_file_path, log_file_path,
                             all_cores=False, max_final_length=10, min_per_day=3, min_per_day_hemi=3):
-#    logging.basicConfig(filename="/dev/null", level=logging.DEBUG)
-    logging.basicConfig(level=logging.DEBUG)
-#    logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger()
     fh = logging.FileHandler(log_file_path, mode='w')
     logger.addHandler(fh)
 
-    logger.info('////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////')
-    logger.info('////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////')
+    logger.info('****************************************************************************************************************************************')
+    logger.info('****************************************************************************************************************************************')
     logger.info('           Target category {:}\n'.format(category))
 
     #///////////////////////////////////////////
@@ -113,7 +110,8 @@ if __name__ == "__main__":
     subprocess.call("mkdir -p {:s}".format(args.newfilepath), shell=True)
 
     log_fname = os.path.join(args.newfilepath, "ote_targets_{:s}.log".format(datetime.datetime.now().strftime("%Y-%m-%d")))
-#    logging.basicConfig(filename=log_fname, filemode='w', level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
+    logging.info("Writing target selection pipeline log to {:s}".format(log_fname))
 
     #///////////////////////////////////////////
     # EARLY COMMISSIONING
