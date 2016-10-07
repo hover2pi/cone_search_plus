@@ -765,6 +765,9 @@ if __name__ == "__main__":
         log_fname = args.logfilepath
     logging.basicConfig(filename=log_fname, level=logging.DEBUG, filemode='a')
     logger = logging.getLogger()
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    logger.addHandler(ch)
 
     # Set up these shared/global variables
     if args.ncores:

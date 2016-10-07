@@ -193,7 +193,9 @@ if __name__ == "__main__":
         log_fname = args.logfilepath
     logging.basicConfig(filename=log_fname, level=logging.DEBUG)
     logger = logging.getLogger()
-    logger.handlers[0].flush()
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    logger.addHandler(ch)
     
     targets_fname = args.targets
     avail_fname = args.availability

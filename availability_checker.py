@@ -532,6 +532,10 @@ if __name__ == "__main__":
     else:
         log_fname = args.logfilepath
     logging.basicConfig(filename=log_fname, level=logging.DEBUG, filemode='a')
+    logger = logging.getLogger()
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    logger.addHandler(ch)
 
     jwst_launch = datetime.datetime(2018, 10, 1)
 
