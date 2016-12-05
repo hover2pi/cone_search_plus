@@ -9,19 +9,11 @@ target_lists = {
     },
 
     'global_alignment': {
-        'k_mag': (4.5, 5.5),
-        'neighbors': (
-            {'delta_k': 7, 'r_arcmin': 2.5},
-        ),
-        'elat': 85
-    },
-
-    'global_alignment_faint': {
         'k_mag': (6.5, 7.5),
         'neighbors': (
             {'delta_k': 7, 'r_arcmin': 2.5},
         ),
-        'elat': 85
+        'elat': 75
     },
 
     'coarse_phasing': {
