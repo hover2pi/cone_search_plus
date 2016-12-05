@@ -443,27 +443,35 @@ if __name__ == "__main__":
             logging.info('Wrote southern latitude reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eS_fname, reduc_targets_eS_RADec_fname, reduc_targets_eS_twomass_fname))
     if reduc_status_eN and reduc_status_eS:
         reduc_targets_eNS = vstack([reduc_targets_eN, reduc_targets_eS])
-        logging.info('\nReduced list, combined northern+southern (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eNS),min_targets_per_day_hemi))
-        logging.info(reduc_targets_eNS)
-        reduc_targets_eNS_full = reduc_targets_eNS['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
-        reduc_targets_eNS_RADec = reduc_targets_eNS['RA', 'Dec']
-        reduc_targets_eNS_twomass = reduc_targets_eNS['2MASS']
-        reduc_targets_eNS_apt = reduc_targets_eNS['2MASS', 'RA', 'Dec', 'J', 'H', 'K']
-        reduc_targets_eNS_RADec.meta = {}
-        reduc_targets_eNS_twomass.meta = {} 
-        reduc_targets_eNS_apt.meta = {} 
-        reduc_targets_eNS_fname = targets_fname + '_NS_reduc'
-        reduc_targets_eNS_RADec_fname = reduc_targets_eNS_fname + '_RADec'
-        reduc_targets_eNS_twomass_fname = reduc_targets_eNS_fname + '_2MASS'
-        reduc_targets_eNS_apt_fname = reduc_targets_eNS_fname + '_apt.csv'
-        if not args.nowrite:
-            #reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header', overwrite=True)
-            #reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header', overwrite=True)
-            #reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',', overwrite=True)
-            reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header')
-            reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header')
-            reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',')
-            with open(reduc_targets_eNS_twomass_fname, mode='wt') as twomass_list_file:
-                twomass_list_file.write('\n'.join(reduc_targets_eNS_twomass))
-                twomass_list_file.write('\n')
-            logging.info('Wrote combined northern+southern reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eNS_fname, reduc_targets_eNS_RADec_fname, reduc_targets_eNS_twomass_fname))
+    elif reduc_status_eN:
+        reduc_targets_eNS = reduc_targets_eN
+    elif reduc_status_eS:
+        reduc_targets_eNS = reduc_targets_eS
+    else:
+        logging.warning('\nNo targets survived to reduced list; exiting with no output products')
+        sys.exit(1)
+
+    logging.info('\nReduced list, combined northern+southern (%d stars for min daily avail. %d stars per hem.)'%(len(reduc_targets_eNS),min_targets_per_day_hemi))
+    logging.info(reduc_targets_eNS)
+    reduc_targets_eNS_full = reduc_targets_eNS['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
+    reduc_targets_eNS_RADec = reduc_targets_eNS['RA', 'Dec']
+    reduc_targets_eNS_twomass = reduc_targets_eNS['2MASS']
+    reduc_targets_eNS_apt = reduc_targets_eNS['2MASS', 'RA', 'Dec', 'J', 'H', 'K']
+    reduc_targets_eNS_RADec.meta = {}
+    reduc_targets_eNS_twomass.meta = {} 
+    reduc_targets_eNS_apt.meta = {} 
+    reduc_targets_eNS_fname = targets_fname + '_NS_reduc'
+    reduc_targets_eNS_RADec_fname = reduc_targets_eNS_fname + '_RADec'
+    reduc_targets_eNS_twomass_fname = reduc_targets_eNS_fname + '_2MASS'
+    reduc_targets_eNS_apt_fname = reduc_targets_eNS_fname + '_apt.csv'
+    if not args.nowrite:
+        #reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header', overwrite=True)
+        #reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header', overwrite=True)
+        #reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',', overwrite=True)
+        reduc_targets_eNS_full.write(reduc_targets_eNS_fname, format='ascii.no_header')
+        reduc_targets_eNS_RADec.write(reduc_targets_eNS_RADec_fname, format='ascii.no_header')
+        reduc_targets_eNS_apt.write(reduc_targets_eNS_apt_fname, format='ascii', delimiter=',')
+        with open(reduc_targets_eNS_twomass_fname, mode='wt') as twomass_list_file:
+            twomass_list_file.write('\n'.join(reduc_targets_eNS_twomass))
+            twomass_list_file.write('\n')
+        logging.info('Wrote combined northern+southern reduced target lists to\n%s,\n%s,\n%s'%(reduc_targets_eNS_fname, reduc_targets_eNS_RADec_fname, reduc_targets_eNS_twomass_fname))
