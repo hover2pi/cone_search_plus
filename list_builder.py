@@ -854,6 +854,9 @@ def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='',
     if ra and dec:
         found['arcmin'] = [round(distance((ra, dec), (r, d))*60.,3) for r,d in zip(found['RA'],found['Dec'])]
     
+    # Rewrite the ascii file with only the original cols
+    ascii.write(found[['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']], path, format='fast_no_header')
+    
     return found
 
 def apply_2MASS_color_cuts(path, JH, HK):
