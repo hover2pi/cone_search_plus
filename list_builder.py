@@ -199,13 +199,16 @@ def chunk_list(base_list_path, chunk_size=CHUNK_SIZE, pretend=False):
         chunk.close()
     return chunk_paths
 
-def compute_base_list(k_min, k_max, spec, target_path, pretend=False):
+def compute_base_list(k_min, k_max, spec, target_path='', pretend=False):
     """Simply query for stars in some magnitude range, optionally
     limiting the ecliptic latitude. The resulting file path is returned, and will
     be of the form `cache/base_<k_min>_k_<k_max>`"""
     # generate filename
     k_min_string = '{:1.1f}'.format(k_min)
     k_max_string = '{:1.1f}'.format(k_max)
+    ra, dec = spec.get('location', {}).get('ra'), spec.get('location', {}).get('dec')
+    radius = spec.get('location', {}).get('radius')
+    
     base_list_name = 'base_{}_k_{}'.format(k_min_string, k_max_string)
     elat_min = spec.get('elat')
     if elat_min is not None:
@@ -221,6 +224,14 @@ def compute_base_list(k_min, k_max, spec, target_path, pretend=False):
         'MK_MIN={}'.format(k_min_string),
         'MK_MAX={}'.format(k_max_string)
     ]
+    
+    # Add center RA and DEC and radius arguments if the search is around particular coordinates
+    if ra and dec and radius:
+        args.append('RA_CEN={}'.format(ra))
+        args.append('DE_CEN={}'.format(dec))
+        args.append('DR_MIN=0.001')
+        args.append('DR_MAX={}'.format(radius))
+        
     # test existence
     if exists(base_list_path):
         _log("{} exists".format(base_list_path))
@@ -395,7 +406,7 @@ def gsc_prune_stars_with_neighbors(base_list_path, output_list_path, delta_k, ra
     output_list.write(output_list_path, format='ascii.no_header')
     _log("Kept", len(output_list), "of", len(base_list))
     _log("Entries kept because zero neighbors were found:", count_zero_neighbors)
-#    _log("Entries discarded because of 2MASS artifacts: ", count_2mass_artifacts)
+    #    _log("Entries discarded because of 2MASS artifacts: ", count_2mass_artifacts)
     _log("Entries discarded because magnitudes weren't available for neighbors:", count_missing_gscmag)
     _log("Entries discarded because can't approximate K mag (input out of range):", count_cant_interpolate)
     _log("Entries discarded because approximate K mag (from Jpg - Fpg color) too bright:", count_approx_k_too_bright)
@@ -428,8 +439,7 @@ def find_neighbors(base_list_path, delta_k, radius_arcmin, pretend=False):
 
     return output_list_path
 
-def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock,
-                                 only_reject_brighter_neighbors, must_check_gsc, pretend=False):
+def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list_path, output_list_lock, only_reject_brighter_neighbors, must_check_gsc, pretend=False):
     """Used in `find_stars_without_neighbors` to neighbor-search and
     then write out those stars with no neighbors to `output_list_path`
 
@@ -513,11 +523,11 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
     if not pretend:
         output_list = open(output_list_path, 'w')
         header = """# base list: {}
-# rejecting stars with neighbors
-# ... of delta K mag <= {}
-# ... within radius <= {} degrees
-# ... and only if they're brighter? {}
-"""
+                # rejecting stars with neighbors
+                # ... of delta K mag <= {}
+                # ... within radius <= {} degrees
+                # ... and only if they're brighter? {}
+                """
         output_list.write(header.format(base_list_path, delta_k_string, radius_degrees_string, only_reject_brighter_neighbors))
         output_list.close()
     else:
@@ -555,7 +565,7 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 total = 0
                 _log("total = 0 (reassign otherwise)")
                 import code
-#                code.interact(local=locals(), global=globals())
+                # code.interact(local=locals(), global=globals())
                 code.interact(local=dict(globals(), **locals()))
             n_stars_kept += total
     else:
@@ -650,7 +660,7 @@ def fix_idx_col(path, pretend=False):
         _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
     return path
 
-def compute_list(name, spec, target_path, list_subdir, pretend=False):
+def compute_list(name, spec, target_path='', list_subdir='', pretend=False):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
     target criteria that can be handled by this script
@@ -674,7 +684,7 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
     HK = spec.get('color_cuts', {}).get('H-K')
     
     # Compute base list
-    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, target_path, ra=ra, dec=dec, radius=radius, pretend=pretend)
+    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, target_path, pretend=pretend)
     n_base_unique = remove_duplicates(base_list_path)
     if elat_min is not None:
         # Replace idx column 'U' prefix with 'N'/'S' to maintain
@@ -765,7 +775,12 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
         _log("Wrote report to {}".format(dest_path + ".report"))
     return dest_path
     
-def init(N_PROCESSES=N_PROCESSES):
+def clear_cache():
+    """Clear the cache"""
+    subprocess.call('mkdir -p ./cache', shell=True)
+    subprocess.call('rm  ./cache/*', shell=True)
+    
+def init(N_PROCESSES=8):
     # Set up these shared/global variables
 
     global _pool
@@ -773,6 +788,34 @@ def init(N_PROCESSES=N_PROCESSES):
 
     _pool = multiprocessing.Pool(N_PROCESSES)
     _manager = multiprocessing.Manager()
+
+def distance(point_a, point_b):    
+    """
+    ((long, lat) in deg, (long, lat) in deg, radius in deg) -> True or False
+
+    Calculate the central angle between the two points, as computed by the haversine
+    formula
+
+    https://en.wikipedia.org/wiki/Haversine_formula
+    """
+    import math
+
+    long1, lat1 = point_a
+    long2, lat2 = point_b
+
+    lambda1, phi1 = long1 * math.pi / 180.0, lat1 * math.pi / 180.0
+    lambda2, phi2 = long2 * math.pi / 180.0, lat2 * math.pi / 180.0
+
+    def haversine(theta):
+        return math.sin(theta / 2.0) ** 2
+
+    hav_d_over_r = haversine(phi2 - phi1) + \
+        math.cos(phi1) * math.cos(phi2) * haversine(lambda2 - lambda1)
+
+    central_angle_rad = 2 * math.asin(math.sqrt(hav_d_over_r))
+    central_angle_deg = central_angle_rad * 180.0 / math.pi
+    
+    return central_angle_deg
 
 def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='', dec='', radius='', name='AMI'):
     """
@@ -782,14 +825,11 @@ def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='',
 
     params = { 'k_mag': (min(kmag),max(kmag)), 
                'neighbors': ( {'delta_k': delta_k, 'r_arcmin': r_arcmin},),
-               'color_cuts': {'J-H': JH, 'H-K': HK} if JH or HK else '',
+               'color_cuts': {'J-H': JH, 'H-K': HK},
                'location': {'ra':ra, 'dec':dec, 'radius':radius},
                #'no_brighter_neighbors_r_arcmin': 3.05,
              }
 
-    # Make sure destination directories exist
-    #subprocess.call('mkdir -p ./cache ./target_lists {}'.format(path), shell=True)
-    
     # Clear the cache of files and initialize multiprocessing
     clear_cache()
     init()
