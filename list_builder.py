@@ -662,18 +662,32 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
         report.append(message)
 
     _log("Computing {} from {}".format(name, pformat(spec)))
-    k_min, k_max = spec['k_mag']
-    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, target_path, pretend=pretend)
-    n_base_unique = remove_duplicates(base_list_path)
+    
+    # Get search criteria from dictionary
+    k_min, k_max = spec.get('k_mag')
+    ra, dec = spec.get('location', {}).get('ra'), spec.get('location', {}).get('dec')
+    radius = spec.get('location', {}).get('radius')
+    neighbor_criteria = spec.get('neighbors', [])
+    brighter_neighbors_r_arcmin = spec.get('no_brighter_neighbors_r_arcmin')
     elat_min = spec.get('elat')
+    JH = spec.get('color_cuts', {}).get('J-H')
+    HK = spec.get('color_cuts', {}).get('H-K')
+    
+    # Compute base list
+    base_list_path, n_base_sources = compute_base_list(k_min, k_max, spec, target_path, ra=ra, dec=dec, radius=radius, pretend=pretend)
+    n_base_unique = remove_duplicates(base_list_path)
     if elat_min is not None:
         # Replace idx column 'U' prefix with 'N'/'S' to maintain
         # unique identifiers in combined base list.
         fix_idx_col(base_list_path, pretend=pretend)
-
+    
+    # Craft and log some messages
     msg = "Base list {} < K {} has {} sources".format(k_min, k_max, n_base_sources)
+    if ra and dec and radius:
+        msg += ' within {} degrees of {} {}'.format(radius,ra,dec)
     _log(msg)
     _report(msg)
+    
     msg = "After removing duplicate entries: {}".format(n_base_unique)
     _log(msg)
     _report(msg)
@@ -682,7 +696,13 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
         msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
         _log(msg)
         _report(msg)
-    neighbor_criteria = spec.get('neighbors', [])
+        
+    # Apply 2MASS color cuts for given search
+    if JH or HK:
+        base_list_path, n_base_minus_extended = apply_2MASS_color_cuts(base_list_path, JH, HK)
+        msg = "After applying 2MASS color cuts: {}".format(n_base_minus_extended)
+        _log(msg)
+        _report(msg)
 
     # neighbor criteria are applied iteratively, so base stars pruned by one set of criteria
     # won't be used as the base for a subsequent cone-search
@@ -709,7 +729,6 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
             _log(msg)
             _report(msg)
 
-    brighter_neighbors_r_arcmin = spec.get('no_brighter_neighbors_r_arcmin')
     if brighter_neighbors_r_arcmin is not None:
         # can't supply DK_MAX here, since we'll miss some bright neighbors unless we set DK_MAX high enough that it's useless
         _log("for {} prune brighter neighbors in r {}".format(intermediate_list_path, brighter_neighbors_r_arcmin))
@@ -745,6 +764,93 @@ def compute_list(name, spec, target_path, list_subdir, pretend=False):
         f.write("\n")
         _log("Wrote report to {}".format(dest_path + ".report"))
     return dest_path
+    
+def init(N_PROCESSES=N_PROCESSES):
+    # Set up these shared/global variables
+
+    global _pool
+    global _manager
+
+    _pool = multiprocessing.Pool(N_PROCESSES)
+    _manager = multiprocessing.Manager()
+
+def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='', dec='', radius='', name='AMI'):
+    """
+    Search for stars using the query_2mass script, filtering results by Kmag range,
+    delta Kmag, 2MASS color cuts, and central RA and Dec location
+    """
+
+    params = { 'k_mag': (min(kmag),max(kmag)), 
+               'neighbors': ( {'delta_k': delta_k, 'r_arcmin': r_arcmin},),
+               'color_cuts': {'J-H': JH, 'H-K': HK} if JH or HK else '',
+               'location': {'ra':ra, 'dec':dec, 'radius':radius},
+               #'no_brighter_neighbors_r_arcmin': 3.05,
+             }
+
+    # Make sure destination directories exist
+    #subprocess.call('mkdir -p ./cache ./target_lists {}'.format(path), shell=True)
+    
+    # Clear the cache of files and initialize multiprocessing
+    clear_cache()
+    init()
+
+    # Compute the list of targets
+    path = compute_list(name, params)
+
+    _pool.close()
+    _pool.join()
+
+    # Add the appropriate column names
+    cols = ['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
+    if ra and dec:
+        cols += ['delta_RA','delta_Dec']
+    if JH or HK:
+        cols += ['J-H', 'H-K']
+
+    # Write the table
+    found = ascii.read(path, names=cols)
+    
+    # Also calculate the distance from the center point if ra and dec are specified
+    if ra and dec:
+        found['arcmin'] = [round(distance((ra, dec), (r, d))*60.,3) for r,d in zip(found['RA'],found['Dec'])]
+    
+    return found
+
+def apply_2MASS_color_cuts(path, JH, HK):
+    """
+    Apply the given color cuts in J-H and H-K to prune the list further
+    """
+    # Define the filepath and column names
+    outpath = path + ("_{}_JH_{}".format(*JH) if JH else '') + ("_{}_HK_{}".format(*HK) if HK else '')
+    names = ['RA', 'Dec', 'J', 'H', 'K', 'qual', 'idx']
+    
+    # Read the base list in
+    found = ascii.read(path)
+    if len(found.colnames)==9:
+        names += ['delta_RA','delta_Dec']
+    found = Table(found, names=names)
+    
+    # Get the list lengths
+    n_base_stars, n_stars = len(found), 0
+
+    # Add columns for colors
+    found['J-H'] = found['J']-found['H']
+    found['H-K'] = found['H']-found['K']
+
+    # Apply J-H and H-K color cuts (default values for K0-K5 giants from Straizys+2009)
+    if JH:
+        found = found[(found['J-H']>min(JH))&(found['J-H']<max(JH))]
+        n_stars = n_base_stars-len(found)
+        _log("Pruned {} sources with {} < J-H > {}".format(n_stars,min(JH),max(JH)))
+    if HK:
+        found = found[(found['H-K']>min(HK))&(found['H-K']<max(HK))]
+        n_stars = n_base_stars-n_stars-len(found)
+        _log("Pruned {} sources with {} < H-K > {}".format(n_stars,min(HK),max(HK)))
+    
+    # Write the list to file
+    ascii.write(found, outpath, format='fast_no_header')
+
+    return outpath, len(found)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build a list of stars meeting the provided isolation criteria, based on 2MASS and GSC2 catalog queries.")
