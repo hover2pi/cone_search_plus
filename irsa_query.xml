@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Produced with astropy.io.votable version 1.2.1
+     http://www.astropy.org/ -->
+<VOTABLE version="1.2" xmlns="http://www.ivoa.net/xml/VOTable/v1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.ivoa.net/xml/VOTable/v1.2">
+ <RESOURCE type="results">
+  <TABLE>
+   <FIELD ID="ra" datatype="double" name="ra"/>
+   <FIELD ID="dec" datatype="double" name="dec"/>
+   <DATA>
+    <TABLEDATA>
+     <TR>
+      <TD>40.821449999999999</TD>
+      <TD>0.087260000000000004</TD>
+     </TR>
+     <TR>
+      <TD>40.937829999999998</TD>
+      <TD>0.21037</TD>
+     </TR>
+     <TR>
+      <TD>41.235259999999997</TD>
+      <TD>-0.00362</TD>
+     </TR>
+    </TABLEDATA>
+   </DATA>
+  </TABLE>
+ </RESOURCE>
+</VOTABLE>

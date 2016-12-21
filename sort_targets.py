@@ -72,7 +72,7 @@ import numpy as np
 from astropy.table import Table, vstack
 import glob
 import matplotlib
-from matplotlib import pyplot as plt
+#from matplotlib import pyplot as plt
 import sys
 import os
 import ephem
@@ -80,6 +80,7 @@ import subprocess
 import requests
 import urllib
 import astropy.io.votable
+import datetime
 #import astroquery.simbad
 #import StringIO
 import pdb
@@ -107,7 +108,7 @@ def make_reduced_table(in_table, daily_min, max_length):
     rr = 0
     while rr < N_cand:
         #simbadurl = basesimbadurl + "%f"%in_table['RA'][rr]  + "%20" + "%f"%in_table['Dec'][rr] + "%20radius=" + "%ds"%matchradius
-        simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
+        simbadurl = basesimbadurl + "%s"%urllib.parse.quote_plus(in_table['2MASS'][rr])
         f = requests.get(simbadurl)
         queryout = f.text
         splitlines = queryout.split('\n')
@@ -138,7 +139,7 @@ def make_reduced_table(in_table, daily_min, max_length):
         logging.warning('    No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
     else:
         while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
-            simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
+            simbadurl = basesimbadurl + "%s"%urllib.parse.quote_plus(in_table['2MASS'][rr])
             f = requests.get(simbadurl)
             queryout = f.text
             splitlines = queryout.split('\n')
@@ -191,7 +192,7 @@ if __name__ == "__main__":
                                   "ote_targets_{:s}.log".format(datetime.datetime.now().strftime("%Y-%m-%d")) )
     else:
         log_fname = args.logfilepath
-    logging.basicConfig(filename=log_fname, level=logging.DEBUG)
+    #logging.basicConfig(filename=log_fname, level=logging.DEBUG)
     logger = logging.getLogger()
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
