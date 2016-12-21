@@ -2,3 +2,7 @@ BASE.DATA
 cache
 target_lists
 target_lists_cvz_only
+*.pyc
+query_2mass
+query_2mass.out
+__pycache__
