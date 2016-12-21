@@ -817,7 +817,8 @@ def distance(point_a, point_b):
     
     return central_angle_deg
 
-def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='', dec='', radius='', name='AMI'):
+def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='', dec='', 
+           radius='', name='AMI', list_subdir='target_lists/'):
     """
     Search for stars using the query_2mass script, filtering results by Kmag range,
     delta Kmag, 2MASS color cuts, and central RA and Dec location
@@ -835,7 +836,7 @@ def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='',
     init()
 
     # Compute the list of targets
-    path = compute_list(name, params)
+    path = compute_list(name, params, list_subdir=list_subdir)
 
     _pool.close()
     _pool.join()
