@@ -81,7 +81,7 @@ import requests
 import urllib
 import astropy.io.votable
 #import astroquery.simbad
-import StringIO
+#import StringIO
 import pdb
 import argparse
 import logging
