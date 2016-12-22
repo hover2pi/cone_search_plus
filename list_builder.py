@@ -918,6 +918,7 @@ if __name__ == "__main__":
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
     logger.addHandler(ch)
+    logging.getLogger("requests").setLevel(logging.WARNING)
 
     # Set up these shared/global variables
     if args.ncores:
