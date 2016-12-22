@@ -108,7 +108,8 @@ def make_reduced_table(in_table, daily_min, max_length):
     rr = 0
     while rr < N_cand:
         #simbadurl = basesimbadurl + "%f"%in_table['RA'][rr]  + "%20" + "%f"%in_table['Dec'][rr] + "%20radius=" + "%ds"%matchradius
-        simbadurl = basesimbadurl + "%s"%urllib.parse.quote_plus(in_table['2MASS'][rr])
+        #simbadurl = basesimbadurl + "%s"%urllib.parse.quote_plus(in_table['2MASS'][rr])
+        simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
         f = requests.get(simbadurl)
         queryout = f.text
         splitlines = queryout.split('\n')
