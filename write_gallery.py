@@ -138,7 +138,8 @@ if __name__ == "__main__":
     #    FoV = float(sys.argv[2])
     #else:
     #    FoV = 0.5
+
+    html_fname = args.twomassIDlist_fname + '.html'
+    gallery(twomass_IDs, html_fname, FoV=float(args.fov))
     
-    gallery(twomass_IDs, sys.argv[1], FoV=float(args.fov))
-    
-    logging.info('Wrote html cutout gallery to %s'%html_fname)
+    logging.info('Wrote html cutout gallery to {:s}'.format(html_fname))
