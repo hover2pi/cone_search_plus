@@ -139,6 +139,6 @@ if __name__ == "__main__":
     #else:
     #    FoV = 0.5
     
-    gallery(twomass_IDs, sys.argv[1], FOV=float(args.fov))
+    gallery(twomass_IDs, sys.argv[1], FoV=float(args.fov))
     
     logging.info('Wrote html cutout gallery to %s'%html_fname)
