@@ -140,7 +140,7 @@ def make_reduced_table(in_table, daily_min, max_length):
         logging.warning('    No candidates in the %d-star input list qualify for the reduced list.'%(N_cand))
     else:
         while np.sum(reduc_table['avail'],axis=0).min() < daily_min and rr < N_cand and len(reduc_table) < max_length:
-            simbadurl = basesimbadurl + "%s"%urllib.parse.quote_plus(in_table['2MASS'][rr])
+            simbadurl = basesimbadurl + "%s"%urllib.quote_plus(in_table['2MASS'][rr])
             f = requests.get(simbadurl)
             queryout = f.text
             splitlines = queryout.split('\n')
