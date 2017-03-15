@@ -23,8 +23,11 @@ import argparse
 #        -> per casual tests and Jay's email, handles singularities at poles
 # TODO: generate sky plots of results
 
-from list_specs import target_lists, jay_lists
-
+try:
+    from list_specs import target_lists, jay_lists
+except ImportError:
+    from .list_specs import target_lists, jay_lists
+    
 # Skip anything that touches the filesystem (for debugging)
 #PRETEND = False
 # Query the ecliptic poles only (faster, saves in target_lists_cvz_only)
@@ -598,7 +601,7 @@ def count_non_comment_lines(path, pretend=False):
                     non_comment_lines += 1
     return non_comment_lines
 
-def remove_non_AAA_sources(path, pretend=False):
+def remove_low_quality_sources(path, quality='A', pretend=False):
     """Remove all sources with PSC qual flags other than AAA
     (in other words, keep only those with good photometry in J/H/K)"""
     outpath = path + "_good"
@@ -612,12 +615,13 @@ def remove_non_AAA_sources(path, pretend=False):
                         continue
                     else:
                         n_base_stars += 1
-
-                    if 'AAA' not in line:
+                    
+                    q_flags = line.split()[5]
+                    if any([i>quality for i in q_flags]):
                         n_pruned += 1
                         continue
                     fout.write(line)
-        _log("Pruned {} sources with non-AAA quality flags".format(n_pruned))
+        _log("Pruned {} sources with worse than '{}' quality flags".format(n_pruned,quality*3))
     n_kept = n_base_stars - n_pruned
     return outpath, n_kept
 
@@ -660,7 +664,7 @@ def fix_idx_col(path, pretend=False):
         _log("Replaced idx column 'U' prefix with 'N'/'S' to maintain unique identifiers in combined base list")
     return path
 
-def compute_list(name, spec, target_path='', list_subdir='', pretend=False):
+def compute_list(name, spec, target_path='', list_subdir='', quality='A', pretend=False):
     """Given a data structure corresponding to target criteria
     (i.e. a dict from `list_specs`), compute the base list and apply
     target criteria that can be handled by this script
@@ -702,8 +706,8 @@ def compute_list(name, spec, target_path='', list_subdir='', pretend=False):
     _log(msg)
     _report(msg)
     if name.startswith('initial_image_mosaic') == False and name.startswith('early_comm') == False:
-        base_list_path, n_base_minus_extended = remove_non_AAA_sources(base_list_path, pretend=pretend)
-        msg = "After removing non-AAA sources: {}".format(n_base_minus_extended)
+        base_list_path, n_base_minus_extended = remove_low_quality_sources(base_list_path, quality=quality, pretend=pretend)
+        msg = "After removing sources with worse than '{}' quality flags: {}".format(quality*3, n_base_minus_extended)
         _log(msg)
         _report(msg)
         
@@ -818,7 +822,7 @@ def distance(point_a, point_b):
     return central_angle_deg
 
 def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='', dec='', 
-           radius='', name='AMI', list_subdir='target_lists/'):
+           radius='', name='AMI', quality='AAA', list_subdir='target_lists/'):
     """
     Search for stars using the query_2mass script, filtering results by Kmag range,
     delta Kmag, 2MASS color cuts, and central RA and Dec location
@@ -836,7 +840,7 @@ def search(kmag, delta_k=5., r_arcmin=0.043, JH=(0.4,0.9), HK=(-0.1,0.3), ra='',
     init()
 
     # Compute the list of targets
-    path = compute_list(name, params, list_subdir=list_subdir)
+    path = compute_list(name, params, quality=quality, list_subdir=list_subdir)
 
     _pool.close()
     _pool.join()
