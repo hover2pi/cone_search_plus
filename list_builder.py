@@ -602,8 +602,11 @@ def count_non_comment_lines(path, pretend=False):
     return non_comment_lines
 
 def remove_low_quality_sources(path, quality='A', pretend=False):
-    """Remove all sources with PSC qual flags other than AAA
-    (in other words, keep only those with good photometry in J/H/K)"""
+    """Remove all sources with any PSC qual flags worse than the value 
+    given by **quality** argument, i.e. keep only those with good photometry in JHK.
+    For example, if quality='B' then acceptible PSC quality flags include
+    'AAA', 'BAA', 'ABA', 'AAB', 'BBA', 'ABB', 'BAB', and 'BBB'
+    """
     outpath = path + "_good"
     n_pruned = 0
     n_base_stars = 0
