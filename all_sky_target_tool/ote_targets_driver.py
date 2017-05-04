@@ -8,8 +8,7 @@ import subprocess
 import multiprocessing
 import argparse
 import logging
-
-from list_specs import target_lists
+from .list_specs import target_lists
 
 def run_ote_target_pipeline(category, target_file_path, new_file_path, log_file_path,
                             all_cores=False, max_final_length=10, min_per_day=3, min_per_day_hemi=3):

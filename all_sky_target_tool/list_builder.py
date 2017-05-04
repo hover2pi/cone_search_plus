@@ -17,6 +17,7 @@ from scipy.interpolate import interp1d
 from pprint import pformat
 from os.path import split, join, exists
 import argparse
+import pkg_resources
 
 # DONE: warn when neighbor criteria push below completeness limit in K for 2MASS
 # N/A : flag stars at poles in RA/Dec as potentially having undetected neighbors
@@ -64,6 +65,7 @@ DOUBLE_CHECK_NEIGHBORS = False
 RADIUS_DEGREES_FORMAT = '{:1.5f}'
 SERVICE_URL_TEMPLATE = "http://gsss.stsci.edu/webservices/vo/ConeSearch.aspx?RA={ra:03.9}&DEC={dec:02.8}&SR={rdeg}&FORMAT=CSV&CAT=GSC23"
 
+run_2mass = pkg_resources.resource_filename('all_sky_target_tool', 'query_2mass').replace('query_2mass','./query_2mass')
 # These globals are set in the if __name__ == "__main__" block
 _pool = None
 _manager = None
@@ -128,6 +130,9 @@ def run_command(command_args, input_from=None, output_to=None, pretend=False):
         input_file = open(input_from) if input_from else None
         output_file = open(output_to, 'w') if output_to else None
         try:
+            # Patch to fix El Capitan path removal nonsense
+            os.system("install_name_tool -change @rpath/libgfortran.3.dylib ${CONDA_PREFIX}/lib/libgfortran.3.dylib -change @rpath/libquadmath.0.dylib ${CONDA_PREFIX}/lib/libquadmath.0.dylib "+pkg_resources.resource_filename('all_sky_target_tool', 'query_2mass'))
+            
             return_code = subprocess.check_call(
                 command_args,
                 stdin=input_file,
@@ -135,6 +140,7 @@ def run_command(command_args, input_from=None, output_to=None, pretend=False):
                 stderr=subprocess.STDOUT
             )
         except subprocess.CalledProcessError:
+            # pass
             if input_from is not None:
                 input_file.close()
             if output_to is not None:
@@ -221,12 +227,9 @@ def compute_base_list(k_min, k_max, spec, target_path='', pretend=False):
 #    elif NEAR_CVZ_ONLY:
 #        base_list_name += "_nearcvz"
     base_list_path = join(target_path, 'cache', base_list_name)
+    
     # build args list
-    args = [
-        './query_2mass',
-        'MK_MIN={}'.format(k_min_string),
-        'MK_MAX={}'.format(k_max_string)
-    ]
+    args = [run_2mass, 'MK_MIN={}'.format(k_min_string), 'MK_MAX={}'.format(k_max_string)]
     
     # Add center RA and DEC and radius arguments if the search is around particular coordinates
     if ra and dec and radius:
@@ -426,7 +429,7 @@ def find_neighbors(base_list_path, delta_k, radius_arcmin, pretend=False):
 
     radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
     args = [
-        './query_2mass',
+        run_2mass,
         'RDLIST+',
         'DR_MIN=0.001',
         'DR_MAX={}'.format(radius_degrees_string)
@@ -459,7 +462,7 @@ def _process_chunk_for_neighbors(chunk_path, delta_k, radius_arcmin, output_list
     # pedantically double-check this output
     if DOUBLE_CHECK_NEIGHBORS and delta_k is not None:
         radius_degrees_string = RADIUS_DEGREES_FORMAT.format(radius_arcmin / 60.)  # radius to degrees
-        commandstring = "./query_2mass RDLIST+ DR_MIN=0.001 DR_MAX={} DK_MAX={} < {}".format(radius_degrees_string, delta_k, pruned_chunk_path)
+        commandstring = "{} RDLIST+ DR_MIN=0.001 DR_MAX={} DK_MAX={} < {}".format(run_2mass,radius_degrees_string, delta_k, pruned_chunk_path)
         _log(commandstring)
         output = subprocess.check_output(commandstring, shell=True)
         if output != '#NARGs:  4\n# OPEN BASE.DATA for map...\n# OPEN BASE.DATA for work...\n  \n END OF INPUT FILE...\n  \n':
@@ -567,9 +570,9 @@ def find_stars_without_neighbors(base_list_path, delta_k, radius_arcmin, only_re
                 _log("_process_chunk_for_neighbors{}".format(args))
                 total = 0
                 _log("total = 0 (reassign otherwise)")
-                import code
+                # import code
                 # code.interact(local=locals(), global=globals())
-                code.interact(local=dict(globals(), **locals()))
+                # code.interact(local=dict(globals(), **locals()))
             n_stars_kept += total
     else:
         n_stars_kept = 0
@@ -610,22 +613,35 @@ def remove_low_quality_sources(path, quality='A', pretend=False):
     outpath = path + "_good"
     n_pruned = 0
     n_base_stars = 0
+
     if not pretend:
-        with open(outpath, 'w') as fout:
-            with open(path, 'r') as fin:
-                for line in fin:
-                    if len(line) > 0 and line[0] == '#':
-                        continue
-                    else:
-                        n_base_stars += 1
-                    
-                    q_flags = line.split()[5]
-                    if any([i>quality for i in q_flags]):
-                        n_pruned += 1
-                        continue
-                    fout.write(line)
+        fout = open(outpath, 'w')
+        fin = open(path, 'r')
+        
+        for line in fin:
+            if len(line) > 0 and line[0] == '#':
+                continue
+            else:
+                n_base_stars += 1
+            
+            try:
+                q_flags = line.split()[5]
+                if any([i>quality for i in q_flags]):
+                    n_pruned += 1
+                    continue
+                fout.write(line)
+            except:
+                n_pruned += 1
+                continue
+        try:
+            fout.close()
+            fin.close()
+        except:
+            pass
+    
         _log("Pruned {} sources with worse than '{}' quality flags".format(n_pruned,quality*3))
     n_kept = n_base_stars - n_pruned
+
     return outpath, n_kept
 
 def remove_duplicates(path):
@@ -784,8 +800,8 @@ def compute_list(name, spec, target_path='', list_subdir='', quality='A', preten
     
 def clear_cache():
     """Clear the cache"""
-    subprocess.call('mkdir -p ./cache', shell=True)
-    subprocess.call('rm  ./cache/*', shell=True)
+    subprocess.call('mkdir -p {}'.format(run_2mass.replace('./query_2mass','cache')), shell=True)
+    subprocess.call('rm  {}/*'.format(run_2mass.replace('./query_2mass','cache')), shell=True)
     
 def init(N_PROCESSES=8):
     # Set up these shared/global variables
@@ -877,6 +893,7 @@ def apply_2MASS_color_cuts(path, JH, HK):
     
     # Read the base list in
     found = ascii.read(path)
+
     if len(found.colnames)==9:
         names += ['delta_RA','delta_Dec']
     found = Table(found, names=names)

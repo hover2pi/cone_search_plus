@@ -446,6 +446,7 @@ c---------------------------------------------------------
 c
 c this will read in the map to the database
 c
+      print *,'where is data file?'
       write(*,'(''# OPEN BASE.DATA for map...'')')
       open(12,file='BASE.DATA',status='old',
      .        recl= 25941604,
@@ -453,7 +454,7 @@ c
      .        access='DIRECT')
       read(12,rec=1) NMAP_IJ
       close(12)
-
+      print *,'Dtaa file is close'
 
 c---------------------------------------------------------
 c
