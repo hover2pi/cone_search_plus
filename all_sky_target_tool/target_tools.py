@@ -690,7 +690,7 @@ def spt2radius(SpT, plot=False):
     # Ingest list of sources with spectral type and radius measurements
     # Read in spt/radii tables
     tables = []
-    for t in glob.glob(pkg_resources.resource_filename('all_sky_target_tool', 'data/catalogs/radii/*.txt')):
+    for t in glob.glob(pkg_resources.resource_filename('all_sky_target_tool', 'data/radii/*.txt')):
         tab = ii.read(t, header_start=0, delimiter='|')[['spt','radius']]
         tables.append(tab)
     R = at.vstack(tables)
