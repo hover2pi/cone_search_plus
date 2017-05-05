@@ -1,154 +1,404 @@
 #!/usr/bin/env python
-from __future__ import print_function
-from __future__ import division
-import sys
-import os
-import datetime
-import glob
+from __future__ import print_function, division
+import math
 import warnings
+import datetime
 import numpy as np
+import ephem
 import astropy.table as at
 import astropy.units as q
-import astropy.io.ascii as ii
 import astropy.coordinates as coords
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import pkg_resources
 from astroquery.irsa import Irsa
 from astroquery.vizier import Vizier
 from astroquery.simbad import Simbad
-from IPython.core.display import display, HTML
+from . import availability_checker as ac
+
+Vizier.ROW_LIMIT = -1
 
 warnings.simplefilter('ignore', UserWarning)
 
-def vet_list(candidates, write_to=''):
+
+class SourceList(object):
+    
+    def __init__(self, source, search_radius):
+        
+        self.target = ''
+        self.all_sources = []
+        self.sources = []
+        self.JH = ''
+        self.HK = ''
+        self.cols = ['RAJ2000', 'DEJ2000', 'Jmag', 'e_Jmag', 'Hmag', 'e_Hmag', 
+                     'Kmag', 'e_Kmag', 'Qflg', '_2MASS']
+        
+        # Convert RA and Dec into string
+        if isinstance(source, (tuple,list)):
+            source = [i.value if hasattr(i,'unit') else i for i in source]
+            source = ' '.join(map(str,source))
+        
+        # Get the target from SIMBAD
+        if isinstance(source, (str,coords.builtin_frames.icrs.ICRS)):
+            self.target = Simbad.query_region(source, radius=2*q.arcsec)[:1]
+            
+        # Add the coordinates
+        self.target['coords'] = [coords.SkyCoord(ra=self.target['RA'], dec=self.target['DEC'],
+                                                 frame='icrs', unit=(q.hourangle, q.deg))]
+                                                        
+        # Query 2MASS for sources
+        if self.target:
+            c = self.target['coords'][0][0]
+            self.all_sources = Vizier.query_region(c, radius=search_radius, catalog=['II/246/out'])[0]
+            
+        # Get SkyCoords of all sources
+        ra = np.array(self.all_sources['RAJ2000'])*q.degree
+        dec = np.array(self.all_sources['DEJ2000'])*q.degree
+        self.all_sources['coords'] = coords.SkyCoord(ra=ra, dec=dec, frame='icrs')
+            
+        print(len(self.all_sources),'sources found within',str(search_radius))
+        
+        self.sources = self.all_sources
+
+    def color_cut(self, JH='', HK=''):
+        """
+        Reduce the list to sources within the given color cuts in J-H and H-K
+        """
+        # Get total stars
+        start = len(self.sources)
+
+        # Add columns for colors and color errors
+        self.sources['JHmag'] = self.sources['Jmag']-self.sources['Hmag']
+        self.sources['e_JHmag'] = np.sqrt(self.sources['e_Jmag']**2 + self.sources['e_Hmag']**2)
+        self.sources['HKmag'] = self.sources['Hmag']-self.sources['Kmag']
+        self.sources['e_HKmag'] = np.sqrt(self.sources['e_Hmag']**2 + self.sources['e_Kmag']**2)
+
+        # Apply J-H and H-K color cuts (default values for K0-K5 giants from Straizys+2009)
+        if JH:
+            self.sources = self.sources[(self.sources['JHmag']+self.sources['e_JHmag']>min(JH))
+                                        &(self.sources['JHmag']-self.sources['e_JHmag']<max(JH))]
+            start = len(self.sources)
+            print('{}/{} stars with {} < J-H > {}'.format(len(self.sources),start,min(JH),max(JH)))
+        if HK:
+            self.sources = self.sources[(self.sources['HKmag']+self.sources['e_HKmag']>min(JH))
+                                        &(self.sources['HKmag']-self.sources['e_HKmag']<max(JH))]
+            print('{}/{} stars with {} < H-K > {}'.format(len(self.sources),start,min(HK),max(HK)))
+        
+        self.JH = JH
+        self.HK = HK
+    
+    def quality_cut(self, quality='A'):
+        """
+        Reduce the list to sources with any PSC qual flags better than or equal to the value 
+        given by **quality** argument, i.e. keep only those with good photometry in JHK.
+        For example, if quality='B' then acceptable PSC quality flags include
+        'AAA', 'BAA', 'ABA', 'AAB', 'BBA', 'ABB', 'BAB', and 'BBB'
+        """
+        start = len(self.sources)
+        
+        keep = np.zeros(start)
+        for n in range(start):
+            if all([str(self.sources[n]['Qflg'])[i]<=quality for i in [2,3,4]]):
+                keep[n] = 1
+                
+        self.sources = self.sources[np.where(keep)]
+        self.quality = quality
+        
+        print('{}/{} stars with quality flags {} or better'.format(len(self.sources),start,quality))
+        
+    def proximity_cut(self, radius=4*q.arcsec, delta_K=5.):
+        """
+        Reduce the list to all sources with no other sources within *radius* and *delta_K*
+        """
+        start = len(self.sources)
+        
+        # Iterate through the coordinates and keep only those with 
+        # no bright neighbors
+        drop = np.zeros(start)
+        radec = np.array(self.sources['coords'])
+        Kmags = np.array(self.sources['Kmag'])
+        Kerrs = np.array(self.sources['e_Kmag'])
+        for i,(C,K,E) in enumerate(zip(radec,Kmags,Kerrs)):
+            for j,(c,k,e) in enumerate(zip(radec,Kmags,Kerrs)):
+                if i!=j:
+                    if C.separation(c)<=radius and abs(k-K)>=delta_K:
+                        drop[i] = 1
+                        break
+                        
+        self.sources = self.sources[np.where(1-drop)]
+        
+        print('{}/{} stars with neighbors within {} and {} mags'.format(len(self.sources),start,str(radius),delta_K))
+    
+    def binary_cut(self, catalogs=['B/wds/wds','J/AJ/143/124','J/AJ/119/3084/table2']):
+        """
+        Reduce the list to singletons
+        """
+        start = len(self.sources)
+        
+        keep = np.zeros(start)
+        radec = np.array(self.sources['coords'])
+        for n in range(start):
+            binary = Vizier.query_region(radec[n], radius=2*q.arcsec, catalog=catalogs)
+            if not binary:
+                keep[n] = 1
+        
+        # Add line to test if flagged binaries are sufficiently separated
+        
+        self.sources = self.sources[np.where(keep)]
+        
+        print('{}/{} stars that are not binaries'.format(len(self.sources),start))
+        
+    def spectral_type_cut(self, SpT_range=('F0','M0'), 
+                          catalogs=['B/mk/mktypes', 'J/ApJ/816/80/table3', 
+                                    'III/214/vol5', 'III/133/vol4', 
+                                    'III/76A/ls', 'III/230/catalog', 
+                                    'J/ApJS/151/387/library', 'V/137D/XHIP']):
+        """
+        Reduce the list to sources in given spectral type range
+        """
+        start = len(self.sources)
+        SpT = []
+        rng = [specType(j)[0] for j in SpT_range]
+        
+        keep = np.zeros(start)
+        radec = np.array(self.sources['coords'])
+        for n in range(start):
+            MK = Vizier.query_region(radec[n], radius=20.0*q.arcsec, catalog=catalogs)
+            spts = []
+            if MK:
+                # Get all the spectral types
+                for cat in MK:
+                    spts += [i.decode("utf-8") for i in cat['SpType']]
+                
+            # Test the spectral type range
+            sp = [specType(j)[0] for j in spts]
+            # if any([np.logical_and(s>=rng[0],s<=rng[1]) for s in sp]):
+            if True:
+                SpT.append(', '.join(list(set(spts))))
+                keep[n] = 1
+        
+        # Trim the list and add the spectral types
+        self.sources = self.sources[np.where(keep)]
+        self.SpT_range = SpT_range
+        self.sources['SpT'] = SpT
+        self.cols += ['SpT']
+        
+        print('{}/{} stars in the spectral type range {}'.format(len(self.sources),start, SpT_range))
+    
+    def check_visibility(self, launch_date=datetime.datetime(2018, 10, 1), n_days=int(1.5*365)):
+        """
+        Run visibility checker for the sources
+        """
+        # First light will occur at about 28 days after launch, initiating
+        # wavefront sensing and control activities to align the mirror segments.
+        # Instrument checkout will start 37 days after launch, well before the
+        # final L2 orbit insertion is obtained after 106 days. Hereafter the
+        # full commissioning starts and the observatory will be ready for normal
+        # science operations approximately 6 months after launch.
+        commissioning_begins = datetime.datetime(2018, 10, 1) + datetime.timedelta(days=28)
+        sun_instances = []
+        availability = np.zeros((len(self.sources), n_days), dtype=np.bool)
+        for i in range(n_days):
+            sun = ephem.Sun()
+            date_string = format_date(commissioning_begins + datetime.timedelta(i))
+            sun.compute(date_string)
+            sun_ec = ephem.Ecliptic(sun)
+            bitmask = field_of_regard_filter(self.sources, sun_ec)
+            availability[:,i] = bitmask
+            sun_instances.append(sun_ec)
+
+        # Plot the availability over the year
+        plt.figure(figsize=(15,10))
+        plt.imshow(availability, cmap=cm.winter, interpolation='none')
+        plt.xlabel('Days since 2018-10-29')
+        plt.ylabel('Target')
+        plt.title('Visibility (green)')
+    
+    def reset(self):
+        self.sources = self.all_sources
+        print('Resetting sources to original',len(self.sources))
+        
+    def show(self):
+        print('\n')
+        self.sources[self.cols].pprint(max_width=-1, max_lines=-1)
+
+def format_date(date_or_datetime):
+    return '{}/{:02}/{:02}'.format(date_or_datetime.year, date_or_datetime.month, date_or_datetime.day)
+
+def angular_separation_rad(lambda1, phi1, lambda2, phi2):
     """
-    Vets a list of candidates by checking catalog magnitudes, binarity, spectral type, distance, and angular diameter.
+    Compute the angular separation from (lambda1, phi1)
+    in radians to (lambda2, phi2) in radians.
     
-    Parameters
-    ----------
-    candidates: astropy.table.Table
-        The table of candidates to vet
-    write_to: str (optional)
-        The file to write the resulting table to
-        
+    lambda1, phi1 : arrays or scalars
+    lambda2, phi2 : scalars
     """
-    # Iterate through list
-    IDs, idx, SPT, PLX, W1list, W2list, kw1, w1w2 = [], [], [], [], [], [], [], []
-    for n,row in enumerate(candidates):
-        r, d = row['RA'], row['Dec']
-        radec = coords.ICRS(ra=r*q.deg, dec=d*q.deg)
-        
-        rj, rh, rk = row['J'], row['H'], row['K']
-        source = Vizier.query_region(radec, radius=10*q.arcsec, catalog=['II/246/out'])
-        simb = Simbad.query_region(radec, radius=10*q.marcsec)
-        try:
-            name = simb[0]['MAIN_ID'].decode("utf-8")
-        except:
-            name = source[0]['_2MASS'][0].decode("utf-8")
-
-        # Checking WDS, Speckle, Fourth Catalog of Interferometric Measurements of Binary Stars
-        wds = Vizier.query_region(radec, radius=2.0*q.arcsec, catalog=['B/wds/wds','J/AJ/143/124','J/AJ/119/3084/table2'])
-        if not wds:
-
-            # Check WISE colors
-            wise = Vizier.query_region(radec, radius=2.0*q.arcsec, catalog=['II/328/allwise'])
-            if wise:
-                j, h, k, w1, w2 = wise[0][['Jmag', 'Hmag', 'Kmag', 'W1mag', 'W2mag']][0]
-                kw1.append(k-w1)
-                w1w2.append(w1-w2)
-
-                # Make sure it's a good 2MASS/WISE cross-match by checking JHK mags
-                if  (j>rj-0.1) and (j<rj+0.1) \
-                and (h>rh-0.1) and (h<rh+0.1) \
-                and (k>rk-0.1) and (k<rk+0.1):
-                    pass
-                else:
-                    print('Bad cross-match?',[j,h,k],[rj,rh,rk])
-
-
-                #if (k-w1<=K-W1+delta) and (k-w1>=K-W1-delta) \
-                #and (w1-w2<=W1-W2+delta) and (w1-w2>=W1-W2-delta):
-                if True:
-                    W1list.append(w1)
-                    W2list.append(w2)
-
-                    # Checking [Skiff, SEGUE, Michigan Spectral Survey]
-                    catalogs = ['B/mk/mktypes', 'J/ApJ/816/80/table3', 'III/214/vol5', 'III/133/vol4', 
-                                'III/76A/ls', 'III/230/catalog', 'J/ApJS/151/387/library', 'V/137D/XHIP']
-                    MK = Vizier.query_region(radec, radius=8.0*q.arcsec, catalog=catalogs)
-                    spts = []
-                    if MK:
-                        for cat in MK:
-                            spts += [i.decode("utf-8") for i in cat['SpType']]
-                    SPT.append(', '.join(list(set(spts))))
-
-                    # Check Gaia for parallax
-                    plx = Vizier.query_region(radec, radius=2.0*q.arcsec, 
-                                              catalog=['I/337/tgas','I/311/hip2'])
-                    if plx:
-                        PLX.append(round(float(plx[0]['Plx']),3))
-                    else:
-                        PLX.append(np.nan)
-
-                    idx.append(n)
-                    IDs.append(name)
-                else:
-                    print(k-w1,K-W1,w1-w2,W1-W2)
-                    print('Bad colors! Skipping...')
-            else:
-                print('Not in WISE! Skipping...')
-        else:
-            print('Binary at {}, {}. Skipping...'.format(r,d))
-
-    # Add the catalog values to the final list
-    final = candidates[idx]
-    final['RA'].unit = final['Dec'].unit = q.deg
-    final['SpT'] = SPT
-    final.rename_column('arcmin', 'sep')
-    final['sep'].unit = q.arcmin
-    final['d'] = pi2pc(PLX)
-    spts = [i.split(',')[0] for i in SPT]
-    final['theta_D'] = theta_D(final['d'], spt=spts)
-    final['W1'] = W1list
-    final['W2'] = W2list
-    final['2MASS'] = IDs
+    hav_d_over_r = haversine(phi2-phi1) +np.cos(phi1)*np.cos(phi2)*haversine(lambda2-lambda1)
+    central_angle_rad = 2*np.arcsin(np.sqrt(hav_d_over_r))
     
-    simb = []
-    for l in final['2MASS']:
-        try:
-            nm = str(Simbad.query_object("2MASS J{}".format(l))['MAIN_ID'][0]).replace("b'",'').replace("'",'')
-        except:
-            nm = '-'
-        simb.append(nm)
-    final.add_column(at.Column(simb, name='SIMBAD'), index=0)
+    return central_angle_rad
     
-    pfinal = final[[k for k in final.colnames if k not in ['idx','delta_RA','delta_Dec','J-H','H-K']]]
+def field_of_regard_filter(catalog, sun):
+    lambdas = np.deg2rad(catalog['GLON'])
+    phis = np.deg2rad(catalog['GLAT'])
+    print(lambdas, phis, sun.lon, sun.lat)
+    separations = angular_separation_rad(lambdas, phis, sun.lon, sun.lat)
+    sun_angle_from_rad = np.deg2rad(sun_angle_from)
+    sun_angle_to_rad = np.deg2rad(sun_angle_to)
+    rows_with_separation_in_range = (separations > sun_angle_from_rad) & (separations < sun_angle_to_rad)
 
-    # Print the table
-    print('\nDone!',len(final),'candidate{} found.\n'.format('' if len(final)==1 else 's'))
-    pfinal.pprint(max_width=120)
+    return rows_with_separation_in_range
+
+def distance(point_a, point_b):    
+    """
+    ((long, lat) in deg, (long, lat) in deg, radius in deg) -> True or False
+
+    Calculate the central angle between the two points, as computed by the haversine
+    formula
+
+    https://en.wikipedia.org/wiki/Haversine_formula
+    """
+    long1, lat1 = point_a
+    long2, lat2 = point_b
+
+    lambda1, phi1 = long1*math.pi/180.0, lat1*math.pi/180.0
+    lambda2, phi2 = long2*math.pi/180.0, lat2*math.pi/180.0
+
+    hav_d_over_r = haversine(phi2-phi1)+math.cos(phi1)*math.cos(phi2)*haversine(lambda2-lambda1)
+
+    central_angle_rad = 2*math.asin(math.sqrt(hav_d_over_r))
+    central_angle_deg = central_angle_rad*180.0/math.pi
     
-    # SIMBAD links
-    html = []
-    for row in pfinal:
-        try:
-            nm = row['SIMBAD'] if row['SIMBAD']!='-' else row['2MASS']
-            link = 'http://simbad.u-strasbg.fr/simbad/sim-id?Ident=2MASS%20J{}'.format(row['2MASS'])
-            html.append("<a href='{}' target='_'>{}</a>".format(link,nm))
-        except:
-            html.append("-")
-    display(HTML(', '.join(html)))
-    
-    # Write the final list to file
-    if final and write_to:
-        final.meta = None
-        final.write(write_to, format='ascii.fixed_width')
-        print('\nTable written to',write_to)
-    else:
-        print('\nNo file written.')
-        
-    return pfinal
+    return central_angle_deg
+
+def haversine(theta):
+    return math.sin(theta/2.0)**2
+
+# def vet_list(candidates, write_to=''):
+#     """
+#     Vets a list of candidates by checking catalog magnitudes, binarity, spectral type, distance, and angular diameter.
+#
+#     Parameters
+#     ----------
+#     candidates: astropy.table.Table
+#         The table of candidates to vet
+#     write_to: str (optional)
+#         The file to write the resulting table to
+#
+#     """
+#     # Iterate through list
+#     IDs, idx, SPT, PLX, W1list, W2list, kw1, w1w2 = [], [], [], [], [], [], [], []
+#     for n,row in enumerate(candidates):
+#         r, d = row['RA'], row['Dec']
+#         radec = coords.ICRS(ra=r*q.deg, dec=d*q.deg)
+#
+#         rj, rh, rk = row['J'], row['H'], row['K']
+#         source = Vizier.query_region(radec, radius=10*q.arcsec, catalog=['II/246/out'])
+#         simb = Simbad.query_region(radec, radius=10*q.marcsec)
+#         try:
+#             name = simb[0]['MAIN_ID'].decode("utf-8")
+#         except:
+#             name = source[0]['_2MASS'][0].decode("utf-8")
+#
+#         # Checking WDS, Speckle, Fourth Catalog of Interferometric Measurements of Binary Stars
+#         wds = Vizier.query_region(radec, radius=2.0*q.arcsec, catalog=['B/wds/wds','J/AJ/143/124','J/AJ/119/3084/table2'])
+#         if not wds:
+#
+#             # Check WISE colors
+#             wise = Vizier.query_region(radec, radius=2.0*q.arcsec, catalog=['II/328/allwise'])
+#             if wise:
+#                 j, h, k, w1, w2 = wise[0][['Jmag', 'Hmag', 'Kmag', 'W1mag', 'W2mag']][0]
+#                 kw1.append(k-w1)
+#                 w1w2.append(w1-w2)
+#
+#                 # Make sure it's a good 2MASS/WISE cross-match by checking JHK mags
+#                 if  (j>rj-0.1) and (j<rj+0.1) \
+#                 and (h>rh-0.1) and (h<rh+0.1) \
+#                 and (k>rk-0.1) and (k<rk+0.1):
+#                     pass
+#                 else:
+#                     print('Bad cross-match?',[j,h,k],[rj,rh,rk])
+#
+#
+#                 #if (k-w1<=K-W1+delta) and (k-w1>=K-W1-delta) \
+#                 #and (w1-w2<=W1-W2+delta) and (w1-w2>=W1-W2-delta):
+#                 if True:
+#                     W1list.append(w1)
+#                     W2list.append(w2)
+#
+#                     # Checking [Skiff, SEGUE, Michigan Spectral Survey]
+#                     catalogs = ['B/mk/mktypes', 'J/ApJ/816/80/table3', 'III/214/vol5', 'III/133/vol4',
+#                                 'III/76A/ls', 'III/230/catalog', 'J/ApJS/151/387/library', 'V/137D/XHIP']
+#                     MK = Vizier.query_region(radec, radius=8.0*q.arcsec, catalog=catalogs)
+#                     spts = []
+#                     if MK:
+#                         for cat in MK:
+#                             spts += [i.decode("utf-8") for i in cat['SpType']]
+#                     SPT.append(', '.join(list(set(spts))))
+#
+#                     # Check Gaia for parallax
+#                     plx = Vizier.query_region(radec, radius=2.0*q.arcsec,
+#                                               catalog=['I/337/tgas','I/311/hip2'])
+#                     if plx:
+#                         PLX.append(round(float(plx[0]['Plx']),3))
+#                     else:
+#                         PLX.append(np.nan)
+#
+#                     idx.append(n)
+#                     IDs.append(name)
+#                 else:
+#                     print(k-w1,K-W1,w1-w2,W1-W2)
+#                     print('Bad colors! Skipping...')
+#             else:
+#                 print('Not in WISE! Skipping...')
+#         else:
+#             print('Binary at {}, {}. Skipping...'.format(r,d))
+#
+#     # Add the catalog values to the final list
+#     final = candidates[idx]
+#     final['RA'].unit = final['Dec'].unit = q.deg
+#     final['SpT'] = SPT
+#     final.rename_column('arcmin', 'sep')
+#     final['sep'].unit = q.arcmin
+#     final['d'] = pi2pc(PLX)
+#     spts = [i.split(',')[0] for i in SPT]
+#     final['theta_D'] = theta_D(final['d'], spt=spts)
+#     final['W1'] = W1list
+#     final['W2'] = W2list
+#     final['2MASS'] = IDs
+#
+#     simb = []
+#     for l in final['2MASS']:
+#         try:
+#             nm = str(Simbad.query_object("2MASS J{}".format(l))['MAIN_ID'][0]).replace("b'",'').replace("'",'')
+#         except:
+#             nm = '-'
+#         simb.append(nm)
+#     final.add_column(at.Column(simb, name='SIMBAD'), index=0)
+#
+#     pfinal = final[[k for k in final.colnames if k not in ['idx','delta_RA','delta_Dec','J-H','H-K']]]
+#
+#     # Print the table
+#     print('\nDone!',len(final),'candidate{} found.\n'.format('' if len(final)==1 else 's'))
+#     pfinal.pprint(max_width=120)
+#
+#     # SIMBAD links
+#     html = []
+#     for row in pfinal:
+#         try:
+#             nm = row['SIMBAD'] if row['SIMBAD']!='-' else row['2MASS']
+#             link = 'http://simbad.u-strasbg.fr/simbad/sim-id?Ident=2MASS%20J{}'.format(row['2MASS'])
+#             html.append("<a href='{}' target='_'>{}</a>".format(link,nm))
+#         except:
+#             html.append("-")
+#     display(HTML(', '.join(html)))
+#
+#     # Write the final list to file
+#     if final and write_to:
+#         final.meta = None
+#         final.write(write_to, format='ascii.fixed_width')
+#         print('\nTable written to',write_to)
+#     else:
+#         print('\nNo file written.')
+#
+#     return pfinal
 
 def polynomial_fit(n, m, degree=1, sig='', x='x', y='y', title='', c='k', ls='--', lw=2, legend=True, ax='',
                       output_data=False, dictionary=True, plot_rms=True, plot=True, verbose=False):
