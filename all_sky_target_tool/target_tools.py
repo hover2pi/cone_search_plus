@@ -8,15 +8,15 @@ import ephem
 import astropy.table as at
 import astropy.units as q
 import astropy.coordinates as coords
+import matplotlib.pyplot as plt
+from matplotlib import cm
 from astroquery.irsa import Irsa
 from astroquery.vizier import Vizier
 from astroquery.simbad import Simbad
 from . import availability_checker as ac
 
 Vizier.ROW_LIMIT = -1
-
 warnings.simplefilter('ignore', UserWarning)
-
 
 class SourceList(object):
     
@@ -46,7 +46,8 @@ class SourceList(object):
         # Query 2MASS for sources
         if self.target:
             c = self.target['coords'][0][0]
-            self.all_sources = Vizier.query_region(c, radius=search_radius, catalog=['II/246/out'])[0]
+            TMASS = Vizier(columns=["**", "+_r"], catalog='II/246/out')
+            self.all_sources = TMASS.query_region(c, radius=search_radius)[0]
             
         # Get SkyCoords of all sources
         ra = np.array(self.all_sources['RAJ2000'])*q.degree
@@ -56,6 +57,8 @@ class SourceList(object):
         print(len(self.all_sources),'sources found within',str(search_radius))
         
         self.sources = self.all_sources
+        
+        self._equatorial_deg_to_ecliptic_deg()
 
     def color_cut(self, JH='', HK=''):
         """
@@ -95,7 +98,7 @@ class SourceList(object):
         
         keep = np.zeros(start)
         for n in range(start):
-            if all([str(self.sources[n]['Qflg'])[i]<=quality for i in [2,3,4]]):
+            if all([str(self.sources[n]['Qflg']).replace("'",'').replace('b','')[i]<=quality for i in [0,1,2]]):
                 keep[n] = 1
                 
         self.sources = self.sources[np.where(keep)]
@@ -160,7 +163,7 @@ class SourceList(object):
         keep = np.zeros(start)
         radec = np.array(self.sources['coords'])
         for n in range(start):
-            MK = Vizier.query_region(radec[n], radius=20.0*q.arcsec, catalog=catalogs)
+            MK = Vizier.query_region(radec[n], radius=1*q.arcmin, catalog=catalogs)
             spts = []
             if MK:
                 # Get all the spectral types
@@ -218,7 +221,26 @@ class SourceList(object):
     def show(self):
         print('\n')
         self.sources[self.cols].pprint(max_width=-1, max_lines=-1)
-
+        
+    def _equatorial_deg_to_ecliptic_deg(self):
+        """
+        Convert RA and declination as decimal degrees to
+        ecliptic longitude and latitude in decimal degrees
+        """
+        def eq2el(ra, dec):
+            eq = ephem.Equatorial(ra*ephem.degree, dec*ephem.degree)
+            ec = ephem.Ecliptic(eq)
+            return ec.lon/ephem.degree, ec.lat/ephem.degree
+        
+        ELAT, ELON = [], []
+        for idx, row in enumerate(self.sources):
+            l, b = eq2el(row['RAJ2000'], row['DEJ2000'])
+            ELAT.append(l)
+            ELON.append(b)
+        
+        self.sources['ELAT'] = ELAT
+        self.sources['ELON'] = ELON
+        
 def format_date(date_or_datetime):
     return '{}/{:02}/{:02}'.format(date_or_datetime.year, date_or_datetime.month, date_or_datetime.day)
 
@@ -230,19 +252,20 @@ def angular_separation_rad(lambda1, phi1, lambda2, phi2):
     lambda1, phi1 : arrays or scalars
     lambda2, phi2 : scalars
     """
-    hav_d_over_r = haversine(phi2-phi1) +np.cos(phi1)*np.cos(phi2)*haversine(lambda2-lambda1)
-    central_angle_rad = 2*np.arcsin(np.sqrt(hav_d_over_r))
-    
+    def haversine(theta):
+        return np.sin(theta / 2.0) ** 2
+    hav_d_over_r = haversine(phi2 - phi1) + \
+        np.cos(phi1) * np.cos(phi2) * haversine(lambda2 - lambda1)
+    central_angle_rad = 2 * np.arcsin(np.sqrt(hav_d_over_r))
     return central_angle_rad
     
-def field_of_regard_filter(catalog, sun):
-    lambdas = np.deg2rad(catalog['GLON'])
-    phis = np.deg2rad(catalog['GLAT'])
-    print(lambdas, phis, sun.lon, sun.lat)
+def field_of_regard_filter(catalog, sun, sun_angle_from=85, sun_angle_to=85+50):
+    lambdas = np.deg2rad(np.array(catalog['ELON']))
+    phis = np.deg2rad(np.array(catalog['ELAT']))
     separations = angular_separation_rad(lambdas, phis, sun.lon, sun.lat)
     sun_angle_from_rad = np.deg2rad(sun_angle_from)
     sun_angle_to_rad = np.deg2rad(sun_angle_to)
-    rows_with_separation_in_range = (separations > sun_angle_from_rad) & (separations < sun_angle_to_rad)
+    rows_with_separation_in_range = (separations>sun_angle_from_rad) & (separations<sun_angle_to_rad)
 
     return rows_with_separation_in_range
 
@@ -497,7 +520,7 @@ def polynomial_eval(values, coeffs, plot=False, color='g', ls='-', lw=2):
 
     return out
 
-def specType(SpT, types=[i for i in 'OBAFGKMLTY']):
+def specType(SpT, types=[i for i in 'OBAFGKMLTY'], verbose=False):
     """
     Converts between float and letter/number spectral types (e.g. 14.5 => 'B4.5' and 'A3' => 23).
     
@@ -515,26 +538,28 @@ def specType(SpT, types=[i for i in 'OBAFGKMLTY']):
     """
     try:
         # String input
-        if isinstance(SpT, str) and SpT[0] in types and SpT!='':
-            MK, LC = SpT[0], 'V'
-            suf = SpT[1:].replace('n','').replace('e','').replace('w','')\
-                         .replace('m','').replace('a','').replace('Fe','')\
-                         .replace('-1','').replace(':','').replace('?','')\
-                         .replace('-V','').replace('p','')
+        if isinstance(SpT, (str,bytes)):
+            SpT = SpT.replace("'",'').replace('b','')
+            if SpT[0] in types and SpT!='':
+                MK, LC = SpT[0], 'V'
+                suf = SpT[1:].replace('n','').replace('e','').replace('w','')\
+                             .replace('m','').replace('a','').replace('Fe','')\
+                             .replace('-1','').replace(':','').replace('?','')\
+                             .replace('-V','').replace('p','')
 
-            for cl in ['III','V','IV']:
-                try:
-                    idx = suf.find(cl)
-                    val = float(suf[:idx].split('/')[0])
-                    LC = suf[idx:].split('/')[0].split(',')[0]
-                    break
-                except:
+                for cl in ['III','V','IV']:
                     try:
-                        val = float(suf)
+                        idx = suf.find(cl)
+                        val = float(suf[:idx].split('/')[0])
+                        LC = suf[idx:].split('/')[0].split(',')[0]
+                        break
                     except:
-                        continue
+                        try:
+                            val = float(suf)
+                        except:
+                            continue
 
-            return [types.index(MK)*10+val-(4 if MK in ['M','L','T','Y'] else 0), LC]
+                return [types.index(MK)*10+val-(4 if MK in ['M','L','T','Y'] else 0), LC]
 
         # Numerical input
         elif isinstance(SpT, float) or isinstance(SpT, int) and 0.0 <= SpT < len(types)*10:
@@ -544,7 +569,8 @@ def specType(SpT, types=[i for i in 'OBAFGKMLTY']):
 
         # Bogus input
         else:
-            print('Spectral type',SpT,'must be a float between 0 and',len(types)*10,'or a string of class',types)
+            if verbose:
+                print('Spectral type',SpT,'must be a float between 0 and',len(types)*10,'or a string of class',types)
             return [np.nan, '']
         
     except:
