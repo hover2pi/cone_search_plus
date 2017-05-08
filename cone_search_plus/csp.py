@@ -13,7 +13,6 @@ from matplotlib import cm
 from astroquery.irsa import Irsa
 from astroquery.vizier import Vizier
 from astroquery.simbad import Simbad
-from . import availability_checker as ac
 
 Vizier.ROW_LIMIT = -1
 warnings.simplefilter('ignore', UserWarning)

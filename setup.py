@@ -8,19 +8,13 @@ except ImportError:
     from distutils.core import setup
     setup
 
-from codecs import open
-from os import path
-
-# Compile the query_2mass Fortran code
-os.system('gfortran all_sky_target_tool/query_2mass.F -o all_sky_target_tool/query_2mass')
-
 setup(
-    name='All-Sky Target Tool',
+    name='Cone Search Plus',
     version='0.1.0',
     description='Search the sky for targets using a variety of tunable constraints',
-    url='https://grit.stsci.edu/ins-tel/ote_target_tool',
-    author='Neil Zimmerman, Joe Filippazzo',
-    author_email='jcfilippazzo@gmail.com',
+    url='https://github.com/hover2pi/cone_search_plus',
+    author='Joe Filippazzo, Neil Zimmerman',
+    author_email='jfilippazzo@stsci.edu',
     license='MIT',
     classifiers=[
         'Development Status :: 4 - Beta',
@@ -30,6 +24,6 @@ setup(
     ],
     keywords='astrophysics',
     packages=find_packages(exclude=['contrib', 'docs', 'tests*']),
-    install_requires=['numpy','astropy','matplotlib'],
+    install_requires=['numpy','astropy','matplotlib','ephem','astroquery'],
 
 )

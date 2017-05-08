@@ -1,1 +1,0 @@
-all_sky_target_tool

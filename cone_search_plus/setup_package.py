@@ -1,4 +1,4 @@
 from distutils.extension import Extension
 
 def get_package_data():
-    return {'all_sky_target_tool': ['data/*', 'data/radii/*']}
+    return {'cone_search_plus': ['data/*', 'data/radii/*']}
