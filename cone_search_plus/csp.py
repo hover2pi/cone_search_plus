@@ -41,13 +41,20 @@ class SourceList(object):
         # Add the coordinates
         self.target['coords'] = [coords.SkyCoord(ra=self.target['RA'], dec=self.target['DEC'],
                                                  frame='icrs', unit=(q.hourangle, q.deg))]
-                                                        
+                                                
         # Query 2MASS for sources
         if self.target:
             c = self.target['coords'][0][0]
-            TMASS = Vizier(columns=["**", "+_r"], catalog='II/246/out')
+            TMASS = Vizier(columns=["**"], catalog='II/246/out')
             self.all_sources = TMASS.query_region(c, radius=search_radius)[0]
+            print(self.all_sources)
+        else:
+            print('No target!')
             
+        # Fix column names
+        # self.all_sources.rename_column('_RAJ2000','RAJ2000')
+        # self.all_sources.rename_column('_DEJ2000','DEJ2000')
+        
         # Get SkyCoords of all sources
         ra = np.array(self.all_sources['RAJ2000'])*q.degree
         dec = np.array(self.all_sources['DEJ2000'])*q.degree
