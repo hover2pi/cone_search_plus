@@ -24,6 +24,6 @@ setup(
     ],
     keywords='astrophysics',
     packages=find_packages(exclude=['contrib', 'docs', 'tests*']),
-    install_requires=['numpy','astropy','matplotlib','ephem','astroquery'],
+    install_requires=['numpy', 'astropy', 'matplotlib', 'ephem', 'astroquery'],
 
 )
