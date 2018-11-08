@@ -24,7 +24,7 @@ warnings.simplefilter('ignore', UserWarning)
 
 class SourceList(object):
     """Create a list of candidate sources from the search results"""
-    def __init__(self, source, search_radius):
+    def __init__(self, source, search_radius=5*q.arcmin):
         """Create a SourceList instance given coordinates and a search radius
 
         Parameters
@@ -38,6 +38,7 @@ class SourceList(object):
         self.target = ''
         self.all_sources = []
         self.sources = []
+        self.search_radius = search_radius
         self.JH = ''
         self.HK = ''
         self.cols = ['RAJ2000', 'DEJ2000', 'Jmag', 'e_Jmag', 'Hmag', 'e_Hmag', 
@@ -77,6 +78,7 @@ class SourceList(object):
         print(len(self.all_sources), 'sources found within', str(search_radius))
 
         self.sources = self.all_sources
+        self.name = self.target['MAIN_ID'][0].decode('UTF-8')
 
         self._equatorial_deg_to_ecliptic_deg()
 
@@ -261,8 +263,38 @@ class SourceList(object):
         self.sources['ELAT'] = ELAT
         self.sources['ELON'] = ELON
 
+    def proximity_plot(self):
+        """
+        Create a scatter plot of sources relative to a target source
+        """
+        # Get the target coordinates
+        X = self.target['coords'][0][0].ra.deg
+        Y = self.target['coords'][0][0].dec.deg
+        radius = self.search_radius.to(q.deg).value
+
+        # Draw the figure
+        plt.figure()
+        plt.scatter([X], [Y], color='r', marker='*', s=200)
+        for source in self.sources['coords']:
+            plt.scatter([source.ra.deg], [source.dec.deg], color='b')
+
+        # Make the circle
+        circle1 = plt.Circle([X, Y], radius, color='r', alpha=0.1)
+        plt.gcf().gca().add_artist(circle1)
+
+        # Fix the labels and 
+        plt.title(self.name)
+        plt.xlabel('Right Ascension [deg]')
+        plt.ylabel('Declination [deg]')
+        plt.ylim(min(plt.ylim()[0], Y-radius), max(plt.ylim()[1], Y+radius))
+        plt.xlim(min(plt.xlim()[0], X-radius), max(plt.xlim()[1], X+radius))
+
+        plt.show()
+
+
 def format_date(date_or_datetime):
     return '{}/{:02}/{:02}'.format(date_or_datetime.year, date_or_datetime.month, date_or_datetime.day)
+
 
 def angular_separation_rad(lambda1, phi1, lambda2, phi2):
     """
@@ -279,6 +311,7 @@ def angular_separation_rad(lambda1, phi1, lambda2, phi2):
     central_angle_rad = 2 * np.arcsin(np.sqrt(hav_d_over_r))
     return central_angle_rad
 
+
 def field_of_regard_filter(catalog, sun, sun_angle_from=85, sun_angle_to=85+50):
     lambdas = np.deg2rad(np.array(catalog['ELON']))
     phis = np.deg2rad(np.array(catalog['ELAT']))
@@ -288,6 +321,7 @@ def field_of_regard_filter(catalog, sun, sun_angle_from=85, sun_angle_to=85+50):
     rows_with_separation_in_range = (separations>sun_angle_from_rad) & (separations<sun_angle_to_rad)
 
     return rows_with_separation_in_range
+
 
 def distance(point_a, point_b):
     """
@@ -311,8 +345,10 @@ def distance(point_a, point_b):
 
     return central_angle_deg
 
+
 def haversine(theta):
     return math.sin(theta/2.0)**2
+
 
 # def vet_list(candidates, write_to=''):
 #     """
@@ -443,6 +479,7 @@ def haversine(theta):
 #
 #     return pfinal
 
+
 def polynomial_fit(n, m, degree=1, sig='', x='x', y='y', title='', c='k', ls='--', lw=2, legend=True, ax='', 
                       output_data=False, dictionary=True, plot_rms=True, plot=True, verbose=False):
     """
@@ -490,6 +527,7 @@ def polynomial_fit(n, m, degree=1, sig='', x='x', y='y', title='', c='k', ls='--
         print('\n')
 
     return D if dictionary else data
+
 
 def polynomial_eval(values, coeffs, plot=False, color='g', ls='-', lw=2):
     '''
@@ -539,6 +577,7 @@ def polynomial_eval(values, coeffs, plot=False, color='g', ls='-', lw=2):
         print("Input values must be an integer, float, or sequence of integers or floats!")
 
     return out
+
 
 def specType(SpT, types=[i for i in 'OBAFGKMLTY'], verbose=False):
     """
@@ -606,42 +645,6 @@ def specType(SpT, types=[i for i in 'OBAFGKMLTY'], verbose=False):
 
     return result
 
-def proximity_plot(x, y, target, radius, xlabel='x', ylabel='y'):
-    """
-    Create a scatter plot of sources relative to a target source
-
-    Parameters
-    ----------
-    x: array-like
-        The x values
-    y: array-like
-        The y values
-    target: array-like
-        The (x, y) values of the target
-    radius: float
-        The radius from the target to draw
-    xlabel: str
-        The x axis label
-    ylabel: str
-        The y axis label
-    """
-    # Get the target coordinates
-    X, Y = target
-
-    # Draw the figure
-    plt.figure()
-    plt.scatter([X], [Y], color='r', marker='*', s=200)
-    plt.scatter(x, y, color='b')
-
-    # Make the circle
-    circle1=plt.Circle(target, radius, color='r', alpha=0.1)
-    plt.gcf().gca().add_artist(circle1)
-
-    # Fix the labels and limits
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.ylim(min(plt.ylim()[0], Y-radius), max(plt.ylim()[1], Y+radius))
-    plt.xlim(min(plt.xlim()[0], X-radius), max(plt.xlim()[1], X+radius))
 
 def pi2pc(parallax, parallax_unc=0):
     """
@@ -673,6 +676,7 @@ def pi2pc(parallax, parallax_unc=0):
     else:
         return d.round(2)
 
+
 def theta_D(distance, radius='', spt=''):
     """
     Calculate the angular diameter of a source given its distance
@@ -702,6 +706,7 @@ def theta_D(distance, radius='', spt=''):
         return (2*np.arctan(RD)).to(q.marcsec).round(4)
     except:
         return np.nan
+
 
 def spt2radius(SpT, plot=False):
     """

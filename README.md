@@ -68,6 +68,15 @@ sl = csp.SourceList([ra,dec], 2*q.arcmin)
 6 sources found within 2.0 arcmin
 ```
 
+And plot it:
+
+```
+sl.proximity_plot()
+```
+
+
+![png](figures/csp_demo.png)
+
 Nice!
 
 ## Licensed
