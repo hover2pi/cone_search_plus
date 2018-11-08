@@ -9,8 +9,8 @@ except ImportError:
     setup
 
 setup(
-    name='Cone Search Plus',
-    version='0.1.0',
+    name='cone_search_plus',
+    version='0.2.0',
     description='Search the sky for targets using a variety of tunable constraints',
     url='https://github.com/hover2pi/cone_search_plus',
     author='Joe Filippazzo, Neil Zimmerman',
@@ -24,6 +24,6 @@ setup(
     ],
     keywords='astrophysics',
     packages=find_packages(exclude=['contrib', 'docs', 'tests*']),
-    install_requires=['numpy','astropy','matplotlib','ephem','astroquery'],
+    install_requires=['numpy', 'astropy', 'matplotlib', 'ephem', 'astroquery'],
 
 )
