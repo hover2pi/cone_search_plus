@@ -9,7 +9,7 @@ except ImportError:
     setup
 
 setup(
-    name='Cone Search Plus',
+    name='cone_search_plus',
     version='0.2.0',
     description='Search the sky for targets using a variety of tunable constraints',
     url='https://github.com/hover2pi/cone_search_plus',
