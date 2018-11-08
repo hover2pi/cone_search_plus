@@ -40,17 +40,35 @@ The package also contains detailed Jupyter notebooks highlighting the core funct
 
 ## Demo
 
-Here is a demo of the software with some code snippets:
+Here is a demo of the software:
 
 ```
+# Imports
 from cone_search_plus import csp
-mc = csp.SourceList('Great package!')
-print(mc.words)
+import astropy.units as q
+
+# Coordinates of Trappist-1
+ra = 346.6223683553692
+dec = -05.0413976917903
+
+# Make the SourceList object
+sl = csp.SourceList([ra,dec], 2*q.arcmin)
 ```
 
-And at least one nice plot:
+```
+  _r     USNO-A2.0    RAJ2000    DEJ2000   ACTflag Mflag Bmag Rmag  Epoch  
+ arcm                   deg        deg                   mag  mag     yr   
+------ ------------- ---------- ---------- ------- ----- ---- ---- --------
+1.7118 0825-19856975 346.595528  -5.031456               18.3 17.2 1953.680
+0.8099 0825-19857185 346.610139  -5.035592               17.4 15.5 1953.680
+0.1138 0825-19857340 346.621587  -5.039667               18.8 18.2 1953.680
+1.9556 0825-19857424 346.627275  -5.073620               18.7 17.7 1953.680
+1.1837 0825-19857643 346.641906  -5.044656               17.9 17.0 1953.680
+1.6607 0825-19857776 346.650070  -5.039175               15.2 14.7 1953.680
+6 sources found within 2.0 arcmin
+```
 
-![png](figures/plot.png)
+Nice!
 
 ## Licensed
 
