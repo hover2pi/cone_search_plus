@@ -13,14 +13,6 @@ Requirements:
 - ephem
 - astroquery
 
-Or... check out the Web application (locally for now) with
-
-```
-python App/csp_app/app_csp.py
-```
-
-And then navigate to `http://0.0.0.0:5000/` in your browser.
-
 ## Installation
 
 Install via PYPI with
@@ -35,6 +27,16 @@ or via Github with
 git clone https://github.com/hover2pi/cone_search_plus.git
 python cone_search_plus/setup.py install
 ```
+
+## Web Application
+
+To run `cone_search_plus` as a Web application, do
+
+```
+python App/csp_app/app_csp.py
+```
+
+And then navigate to `http://0.0.0.0:5000/` in your browser.
 
 ## Documentation
 
