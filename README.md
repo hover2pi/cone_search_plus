@@ -13,7 +13,13 @@ Requirements:
 - ephem
 - astroquery
 
-Or... check out the Web application at [https://csp.stsci.edu](https://csp.stsci.edu)
+Or... check out the Web application (locally for now) with
+
+```
+python App/csp_app/app_csp.py
+```
+
+And then navigate to `http://0.0.0.0:5000/` in your browser.
 
 ## Installation
 
